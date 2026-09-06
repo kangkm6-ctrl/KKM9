@@ -85,27 +85,33 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, cle
   const bookRef = useRef(book);
   useEffect(() => { bookRef.current = book; }, [book]);
 
-  // 10분 동안 움직임(입력/터치/스크롤 등)이 없으면 자동저장, 이 책 화면을 나갈 때도 자동저장.
+  const [showSavePrompt, setShowSavePrompt] = useState(false);
+
+  // 뒤로가기 버튼을 누르는 순간(=진짜 사용자 동작) 안에서 바로 저장해야 브라우저가 다운로드를 막지 않는다.
+  const handleBack = () => {
+    autoSave(bookRef.current);
+    onBack();
+  };
+
+  // 10분 동안 움직임(입력/터치/스크롤 등)이 없으면 "저장 필요" 배너를 띄운다.
+  // (타이머로 자동 다운로드를 직접 실행하면 브라우저가 "사용자 동작이 아니다"라며 조용히 막아버려서,
+  //  배너의 버튼을 사용자가 눌러야 실제로 저장이 진행되도록 한다.)
   useEffect(() => {
     const INACTIVITY_MS = 10 * 60 * 1000;
     let timer = null;
     const resetTimer = () => {
       if (timer) clearTimeout(timer);
+      setShowSavePrompt(false);
       timer = setTimeout(() => {
-        autoSave(bookRef.current);
-        resetTimer();
+        if (isDirty(bookRef.current.id)) setShowSavePrompt(true);
       }, INACTIVITY_MS);
     };
     const events = ["mousedown", "mousemove", "keydown", "touchstart", "scroll", "input"];
     events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
     resetTimer();
-    const handleVisibility = () => { if (document.hidden) autoSave(bookRef.current); };
-    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       events.forEach((ev) => window.removeEventListener(ev, resetTimer));
-      document.removeEventListener("visibilitychange", handleVisibility);
       if (timer) clearTimeout(timer);
-      autoSave(bookRef.current); // 이 책 화면에서 나갈 때 자동저장
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book.id]);
@@ -212,7 +218,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, cle
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
       <div style={{ padding: "0 16px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
-        <button onClick={onBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
+        <button onClick={handleBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
         <div style={{ display: "flex", gap: 6 }}>
           <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImportFile} style={{ display: "none" }} />
           <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
@@ -220,6 +226,18 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, cle
           <button onClick={jumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📍 책갈피로</button>
         </div>
       </div>
+      {showSavePrompt && (
+        <div style={{ margin: "0 16px 14px", padding: "10px 12px", borderRadius: 10, border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, color: "#e7eaf0" }}>10분째 저장 안 된 변경사항이 있어요.</span>
+          <button
+            onClick={() => { autoSave(bookRef.current); setShowSavePrompt(false); }}
+            className="iconbtn"
+            style={{ border: "1px solid #c9974a", background: "rgba(201,151,74,0.22)", color: "#c9974a", fontWeight: 700, fontSize: 12, borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap" }}
+          >
+            지금 저장
+          </button>
+        </div>
+      )}
       <div style={{ padding: "0 20px 40px" }}>
         <div style={{ marginBottom: 16 }}>
           <input
