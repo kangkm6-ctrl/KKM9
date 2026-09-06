@@ -41,6 +41,31 @@ const yymmdd = () => {
 };
 const sanitizeFileName = (s) => (s && s.trim() ? s.trim() : "제목없음").replace(/[\\/:*?"<>|]/g, "_");
 const buildFileName = (title) => `${sanitizeFileName(title)}(${yymmdd()}).xlsx`;
+
+// 문자열 유사도(0~1). 두 글자씩 묶은 바이그램을 서로 비교하는 Dice 계수 방식.
+const toBigrams = (s) => {
+  const norm = s.replace(/\s+/g, " ").trim().toLowerCase();
+  const grams = [];
+  for (let i = 0; i < norm.length - 1; i++) grams.push(norm.substring(i, i + 2));
+  return grams;
+};
+const textSimilarity = (a, b) => {
+  const ga = toBigrams(a);
+  const gb = toBigrams(b);
+  if (ga.length === 0 || gb.length === 0) {
+    return a.replace(/\s+/g, " ").trim().toLowerCase() === b.replace(/\s+/g, " ").trim().toLowerCase() ? 1 : 0;
+  }
+  const counts = new Map();
+  ga.forEach((g) => counts.set(g, (counts.get(g) || 0) + 1));
+  let overlap = 0;
+  gb.forEach((g) => {
+    const c = counts.get(g) || 0;
+    if (c > 0) { overlap++; counts.set(g, c - 1); }
+  });
+  return (2 * overlap) / (ga.length + gb.length);
+};
+const isDuplicateText = (text, others, threshold = 0.8) => others.some((t) => textSimilarity(text, t) >= threshold);
+
 const buildQuotesWorkbook = (title, quotes) => {
   const rows = [...quotes]
     .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
@@ -172,23 +197,22 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
           alert("엑셀에서 읽을 수 있는 내용이 없어요. '번호'/'주요문' 열이 있는지 확인해주세요.");
           return;
         }
-        // 이미 있는 내용(정확히 같은 텍스트)은 추가하지 않는다. 가져온 목록 안에서 중복도 한 번만 남긴다.
-        const existingTexts = new Set(book.quotes.map((q) => q.text.trim()));
-        const seen = new Set();
+        // 기존 내용과 80% 이상 비슷하면 같은 내용으로 보고 제외한다. 가져오는 목록 안에서도 서로 비교해 중복은 하나만 남긴다.
+        const acceptedTexts = book.quotes.map((q) => q.text);
         const uniqueImported = [];
         for (const q of imported) {
-          if (existingTexts.has(q.text) || seen.has(q.text)) continue;
-          seen.add(q.text);
+          if (isDuplicateText(q.text, acceptedTexts)) continue;
+          acceptedTexts.push(q.text);
           uniqueImported.push(q);
         }
         const skipped = imported.length - uniqueImported.length;
         if (uniqueImported.length === 0) {
-          alert("가져올 새 내용이 없어요 (전부 이미 있는 내용이에요).");
+          alert("가져올 새 내용이 없어요 (전부 이미 있는 내용과 80% 이상 비슷해요).");
           return;
         }
         const merged = [...book.quotes, ...uniqueImported].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
         persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
-        alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (중복 ${skipped}개 제외)` : ""}`);
+        alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}`);
       } catch (err) {
         alert("엑셀 파일을 읽지 못했어요: " + (err.message || err));
       }
