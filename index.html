@@ -139,6 +139,14 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
     XLSX.writeFile(buildQuotesWorkbook(book.title, book.quotes), buildFileName(book.title));
   };
 
+  // "3 학이시습지..." 처럼 본문 맨 앞에 붙은 "숫자 + 공백"은 순서를 잡는 데만 참고하고,
+  // 실제 저장되는 내용에서는 떼어낸다 (번호 열이 따로 없는 엑셀을 붙여넣은 경우 대비).
+  const splitLeadingNumber = (raw) => {
+    const m = raw.match(/^\s*(\d+)\s+(\S[\s\S]*)$/);
+    if (!m) return { leadingNumber: null, text: raw.trim() };
+    return { leadingNumber: num(m[1]), text: m[2].trim() };
+  };
+
   const handleImportFile = (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
@@ -151,11 +159,13 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
         const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
         const imported = rows
           .map((row) => {
-            const text = String(row["주요문"] ?? row["명언"] ?? row["내용"] ?? Object.values(row)[1] ?? "").trim();
-            // 번호는 아래에서 기존 항목과 합칠 때 순서를 잡는 용도로만 쓰고,
-            // 최종 저장 시에는 전체를 1,2,3...으로 다시 매기므로 이 값 자체는 내용에 들어가거나 남지 않는다.
+            const rawText = String(row["주요문"] ?? row["명언"] ?? row["내용"] ?? Object.values(row)[1] ?? "").trim();
+            const { leadingNumber, text } = splitLeadingNumber(rawText);
+            // 번호 열 값이 있으면 그걸 우선 쓰고, 없으면 본문 앞에 붙어 있던 숫자를 순서 참고용으로 쓴다.
+            // 어느 쪽이든 최종 저장 시 전체를 1,2,3...으로 다시 매기므로 이 값 자체가 내용에 남지는 않는다.
             const numberRaw = row["번호"] ?? Object.values(row)[0];
-            return { id: genId(), number: num(numberRaw) || 0, text };
+            const number = num(numberRaw) || leadingNumber || 0;
+            return { id: genId(), number, text };
           })
           .filter((q) => q.text);
         if (imported.length === 0) {
