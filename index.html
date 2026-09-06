@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>독서요약집</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="독서요약집" />
+<meta name="theme-color" content="#12151b" />
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  html, body { margin:0; padding:0; background:#12151b; }
+  * { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script id="app-source" type="text/plain" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+const num = (v) => {
+  const normalized = typeof v === "string" ? v.replace(/[\u2010-\u2015\u2212]/g, "-") : v;
+  const n = parseFloat(normalized);
+  return isNaN(n) ? 0 : n;
+};
+
+let __idCounter = 0;
+const genId = () => `id-${Date.now()}-${__idCounter++}-${Math.random().toString(36).slice(2, 8)}`;
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const yymmdd = () => {
+  const d = new Date();
+  return `${String(d.getFullYear()).slice(2)}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+};
+const sanitizeFileName = (s) => (s && s.trim() ? s.trim() : "제목없음").replace(/[\\/:*?"<>|]/g, "_");
+const buildFileName = (title) => `${sanitizeFileName(title)}(${yymmdd()}).xlsx`;
+const buildQuotesWorkbook = (title, quotes) => {
+  const rows = [...quotes]
+    .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
+    .map((q) => ({ "번호": q.number, "주요문": q.text }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ "안내": "저장된 주요문 없음" }]), sanitizeFileName(title).slice(0, 31) || "주요문");
+  return wb;
+};
+
+const BOOKS_KEY = "reading-summary-books-v2";
+
+const seedBooks = [
+  {
+    id: genId(),
+    title: "투자명언",
+    learnedCount: 0,
+    bookmarkQuoteId: null,
+    readDate: new Date().toISOString().slice(0, 10),
+    quotes: [
+      { id: genId(), number: 1, text: "ROE와 영업이익율이 높아 해자가 있는 기업을 가지고 있어야 한다." },
+      { id: genId(), number: 2, text: "학이시습지 불역열호(學而時習之 不亦說乎) : 배우고 때때로 익히면 또한 기쁘지 아니한가" },
+      { id: genId(), number: 3, text: "물극필반(物極必反) : 사물이 극에 달하면 반드시 반전이 일어난다" },
+      { id: genId(), number: 4, text: "니체의 삶의 태도\n메멘토 모리 (Memento Mori) : 죽음을 기억하라 (삶의 한계를 인지함)\n아모르 파티 (Amor Fati) : 운명을 사랑하라 (필연적인 삶의 과정을 수용함)\n카르페 디엠 (Carpe Diem) : 현재를 잡아라 / 오늘을 즐겨라 (지금을 적극적으로 살아감)" },
+      { id: genId(), number: 5, text: "반드시 주식은 고점일 때 팔고 저점일 때 사야 한다." },
+    ],
+  },
+];
+
+function loadBooks() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BOOKS_KEY));
+    return Array.isArray(saved) && saved.length > 0 ? saved : seedBooks;
+  } catch (e) { return seedBooks; }
+}
+
+function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, clearDirty, autoSave }) {
+  const [newQuoteNumber, setNewQuoteNumber] = useState("");
+  const [newQuoteText, setNewQuoteText] = useState("");
+  const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
+  const quoteRowRefs = useRef({});
+  const fileInputRef = useRef(null);
+  const bookRef = useRef(book);
+  useEffect(() => { bookRef.current = book; }, [book]);
+
+  // 10분 동안 움직임(입력/터치/스크롤 등)이 없으면 자동저장, 이 책 화면을 나갈 때도 자동저장.
+  useEffect(() => {
+    const INACTIVITY_MS = 10 * 60 * 1000;
+    let timer = null;
+    const resetTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        autoSave(bookRef.current);
+        resetTimer();
+      }, INACTIVITY_MS);
+    };
+    const events = ["mousedown", "mousemove", "keydown", "touchstart", "scroll", "input"];
+    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
+    resetTimer();
+    const handleVisibility = () => { if (document.hidden) autoSave(bookRef.current); };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (timer) clearTimeout(timer);
+      autoSave(bookRef.current); // 이 책 화면에서 나갈 때 자동저장
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book.id]);
+
+  const persistQuotes = (next) => onUpdateBook({ ...book, quotes: next });
+
+  const renumberQuotes = (list) => [...list]
+    .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
+    .map((q, idx) => ({ ...q, number: idx + 1 }));
+
+  const addQuote = () => {
+    const text = newQuoteText.trim();
+    if (!text) return;
+    const maxNum = book.quotes.reduce((m, q) => Math.max(m, num(q.number) || 0), 0);
+    const number = newQuoteNumber.trim() ? num(newQuoteNumber) : maxNum + 1;
+    persistQuotes([...book.quotes, { id: genId(), number, text }]);
+    setNewQuoteNumber("");
+    setNewQuoteText("");
+  };
+
+  const updateQuoteNumber = (id, value) => {
+    const parsed = Number(value);
+    if (value.trim() === "" || !Number.isFinite(parsed)) {
+      persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, number: value } : q)));
+      return;
+    }
+    const targetNum = Math.max(parsed, book.learnedCount || 0);
+    const editedItem = book.quotes.find((q) => q.id === id);
+    const rest = book.quotes.filter((q) => q.id !== id).sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+    const insertAt = Math.max(0, Math.min(rest.length, Math.round(targetNum) - 1));
+    const reordered = [...rest.slice(0, insertAt), editedItem, ...rest.slice(insertAt)];
+    persistQuotes(reordered.map((q, idx) => ({ ...q, number: idx + 1 })));
+  };
+
+  const updateQuoteText = (id, value) => {
+    if (value.trim() === "") {
+      persistQuotes(renumberQuotes(book.quotes.filter((q) => q.id !== id)));
+      return;
+    }
+    persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, text: value } : q)));
+  };
+
+  const toggleBookmark = (id) => {
+    onUpdateBook({ ...book, bookmarkQuoteId: book.bookmarkQuoteId === id ? null : id });
+  };
+
+  const jumpToBookmark = () => {
+    const node = book.bookmarkQuoteId && quoteRowRefs.current[book.bookmarkQuoteId];
+    if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  const setLearnedCount = (v) => {
+    const n = Number(v);
+    onUpdateBook({ ...book, learnedCount: Number.isFinite(n) && n >= 0 ? n : 0 });
+  };
+
+  const exportToExcel = () => {
+    XLSX.writeFile(buildQuotesWorkbook(book.title, book.quotes), buildFileName(book.title));
+    clearDirty(book.id);
+  };
+
+  const handleImportFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        const imported = rows
+          .map((row) => {
+            const text = String(row["주요문"] ?? row["명언"] ?? row["내용"] ?? Object.values(row)[1] ?? "").trim();
+            const numberRaw = row["번호"] ?? Object.values(row)[0];
+            return { id: genId(), number: num(numberRaw) || 0, text };
+          })
+          .filter((q) => q.text);
+        if (imported.length === 0) {
+          alert("엑셀에서 읽을 수 있는 내용이 없어요. '번호'/'주요문' 열이 있는지 확인해주세요.");
+          return;
+        }
+        const merged = [...book.quotes, ...imported].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+        persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
+        alert(`${imported.length}개를 가져왔어요.`);
+      } catch (err) {
+        alert("엑셀 파일을 읽지 못했어요: " + (err.message || err));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const [titleDraft, setTitleDraft] = useState(book.title || "");
+  useEffect(() => { setTitleDraft(book.title || ""); }, [book.id]);
+
+  const filteredQuotes = [...book.quotes]
+    .filter((q) => {
+      const query = quoteSearchQuery.trim().toLowerCase();
+      if (!query) return true;
+      return q.text.toLowerCase().includes(query) || String(q.number).includes(query);
+    })
+    .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+
+  return (
+    <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
+      <div style={{ padding: "0 16px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+        <button onClick={onBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImportFile} style={{ display: "none" }} />
+          <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
+          <button onClick={exportToExcel} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
+          <button onClick={jumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📍 책갈피로</button>
+        </div>
+      </div>
+      <div style={{ padding: "0 20px 40px" }}>
+        <div style={{ marginBottom: 16 }}>
+          <input
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={() => onRenameBook(titleDraft.trim() || "(제목 없음)")}
+            placeholder="책 제목"
+            style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontSize: 22, fontWeight: 800, color: "#e7eaf0", lineHeight: 1.4, padding: 0, marginBottom: 10 }}
+          />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+              <span style={{ fontSize: 11, color: "#8993a6" }}>읽은날짜</span>
+              <input
+                type="date"
+                value={book.readDate || ""}
+                onChange={(e) => onUpdateBook({ ...book, readDate: e.target.value })}
+                className="field"
+                style={{ width: 128, fontSize: 12, fontWeight: 700, color: "#c9974a", padding: "5px 4px" }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+              <span style={{ fontSize: 11, color: "#8993a6" }}>익힘</span>
+              <input
+                value={book.learnedCount || 0}
+                onChange={(e) => setLearnedCount(e.target.value)}
+                inputMode="numeric"
+                className="field"
+                style={{ width: 40, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "5px 2px" }}
+              />
+              <span style={{ fontSize: 11, color: "#8993a6" }}>번</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #262c37" }}>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <input
+              value={newQuoteNumber}
+              onChange={(e) => setNewQuoteNumber(e.target.value)}
+              placeholder="번호"
+              inputMode="numeric"
+              className="field"
+              style={{ width: 44, flexShrink: 0, fontSize: 15, textAlign: "center", padding: "6px 2px" }}
+            />
+            <textarea
+              value={newQuoteText}
+              onChange={(e) => setNewQuoteText(e.target.value)}
+              onBlur={addQuote}
+              placeholder="내용을 입력하거나 붙여넣으세요"
+              className="field"
+              rows={3}
+              style={{ flex: 1, fontSize: 15, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
+            />
+          </div>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
+
+        <input
+          value={quoteSearchQuery}
+          onChange={(e) => setQuoteSearchQuery(e.target.value)}
+          placeholder="🔍 주요문 검색 (번호 또는 내용)"
+          className="field"
+          style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
+        />
+
+        {filteredQuotes.map((q) => (
+          <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8, padding: "4px 8px", borderRadius: 8, background: q.id === book.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
+              <input
+                value={q.number}
+                onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
+                inputMode="numeric"
+                className="field"
+                style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
+              />
+              <input
+                type="checkbox"
+                checked={q.id === book.bookmarkQuoteId}
+                onChange={() => toggleBookmark(q.id)}
+                style={{ width: 16, height: 16, accentColor: "#c9974a", flexShrink: 0 }}
+              />
+            </div>
+            <textarea
+              ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+              value={q.text}
+              onChange={(e) => {
+                updateQuoteText(q.id, e.target.value);
+                e.target.style.height = "auto";
+                e.target.style.height = e.target.scrollHeight + "px";
+              }}
+              className="field"
+              rows={1}
+              style={{ flex: 1, fontSize: 16, color: "#e7eaf0", lineHeight: 1.5, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [books, setBooks] = useState(loadBooks);
+  const [mainView, setMainView] = useState("index"); // 'index' | 'book'
+  const [currentBookId, setCurrentBookId] = useState(null);
+  const dirtyIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    try { localStorage.setItem(BOOKS_KEY, JSON.stringify(books)); } catch (e) {}
+  }, [books]);
+
+  const currentBook = books.find((b) => b.id === currentBookId) || null;
+
+  const updateBook = (nextBook) => {
+    dirtyIdsRef.current.add(nextBook.id);
+    setBooks((prev) => prev.map((b) => (b.id === nextBook.id ? nextBook : b)));
+  };
+  const renameBook = (title) => {
+    if (!currentBook) return;
+    updateBook({ ...currentBook, title });
+  };
+  const isDirty = (id) => dirtyIdsRef.current.has(id);
+  const clearDirty = (id) => { dirtyIdsRef.current.delete(id); };
+  const autoSaveBook = (bookToSave) => {
+    if (!bookToSave || !isDirty(bookToSave.id)) return;
+    try {
+      XLSX.writeFile(buildQuotesWorkbook(bookToSave.title, bookToSave.quotes), buildFileName(bookToSave.title));
+    } catch (e) {}
+    clearDirty(bookToSave.id);
+  };
+
+  const [newBookTitle, setNewBookTitle] = useState("");
+  const addBook = () => {
+    const trimmed = newBookTitle.trim();
+    if (!trimmed) return;
+    const book = { id: genId(), title: trimmed, learnedCount: 0, bookmarkQuoteId: null, readDate: new Date().toISOString().slice(0, 10), quotes: [] };
+    dirtyIdsRef.current.add(book.id);
+    setBooks((prev) => [...prev, book]);
+    setNewBookTitle("");
+    setCurrentBookId(book.id);
+    setMainView("book");
+  };
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const requestDeleteBook = (id, e) => {
+    e.stopPropagation();
+    setConfirmDeleteId(id);
+  };
+  const cancelDeleteBook = (e) => {
+    e.stopPropagation();
+    setConfirmDeleteId(null);
+  };
+  const confirmDeleteBook = (id, e) => {
+    e.stopPropagation();
+    setBooks((prev) => prev.filter((b) => b.id !== id));
+    setConfirmDeleteId(null);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+      <style>{`
+        .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
+        .field:focus { outline:none; border-color:#c9974a; }
+        .iconbtn { background:none; border:none; cursor:pointer; }
+      `}</style>
+
+      {mainView === "index" && (
+        <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>📚 독서요약집</div>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요.</div>
+
+          {books.length === 0 && (
+            <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 책이 없어요.</div>
+          )}
+
+          {[...books]
+            .sort((a, b) => {
+              const da = a.readDate || "";
+              const db = b.readDate || "";
+              if (!da && !db) return 0;
+              if (!da) return 1;
+              if (!db) return -1;
+              return db.localeCompare(da); // 최근에 읽은 책이 먼저
+            })
+            .map((b) => (
+            <div
+              key={b.id}
+              onClick={() => { setCurrentBookId(b.id); setMainView("book"); }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", marginBottom: 10, cursor: "pointer" }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title || "(제목 없음)"}</div>
+                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
+                  주요문 {b.quotes.length}개 · 읽은날짜 {b.readDate || "미설정"} · 익힘 {b.learnedCount || 0}번
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                {confirmDeleteId === b.id ? (
+                  <>
+                    <span style={{ fontSize: 11, color: "#e8544b", fontWeight: 700, whiteSpace: "nowrap" }}>삭제할까요?</span>
+                    <button
+                      onClick={(e) => confirmDeleteBook(b.id, e)}
+                      className="iconbtn"
+                      style={{ border: "1px solid #e8544b", background: "rgba(232,84,75,0.22)", color: "#e8544b", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
+                    >
+                      삭제
+                    </button>
+                    <button
+                      onClick={cancelDeleteBook}
+                      className="iconbtn"
+                      style={{ border: "1px solid #3a4150", background: "transparent", color: "#8993a6", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
+                    >
+                      취소
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={(e) => requestDeleteBook(b.id, e)}
+                      className="iconbtn"
+                      style={{ border: "1px solid #e8544b", background: "rgba(232,84,75,0.12)", color: "#e8544b", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
+                    >
+                      🗑 삭제
+                    </button>
+                    <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+
+          <div style={{ marginTop: 6 }}>
+            <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 책 제목을 입력하고 추가하세요</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={newBookTitle}
+                onChange={(e) => setNewBookTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addBook(); }}
+                placeholder="새 책 제목 (예: 투자명언)"
+                className="field"
+                style={{ flex: 1, fontSize: 14, padding: "10px 12px" }}
+              />
+              <button
+                onClick={addBook}
+                className="iconbtn"
+                style={{ border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, fontSize: 13, borderRadius: 10, padding: "0 16px", whiteSpace: "nowrap" }}
+              >
+                + 추가
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mainView === "book" && currentBook && (
+        <BookQuotesView
+          book={currentBook}
+          onBack={() => setMainView("index")}
+          onUpdateBook={updateBook}
+          onRenameBook={renameBook}
+          isDirty={isDirty}
+          clearDirty={clearDirty}
+          autoSave={autoSaveBook}
+        />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>
+(function () {
+  try {
+    var src = document.getElementById('app-source').textContent;
+    var out = Babel.transform(src, { presets: ['react'], filename: 'app.jsx' }).code;
+    out += '\n//# sourceURL=app-source.js';
+    (0, eval)(out);
+  } catch (compileErr) {
+    var box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#2a0f0f;color:#ffb4ae;font:12px/1.5 -apple-system,sans-serif;padding:14px;white-space:pre-wrap;';
+    box.textContent = '오류: ' + (compileErr && compileErr.message ? compileErr.message : String(compileErr));
+    document.body.appendChild(box);
+  }
+})();
+</script>
+</body>
+</html>
