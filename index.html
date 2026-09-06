@@ -76,45 +76,12 @@ function loadBooks() {
   } catch (e) { return seedBooks; }
 }
 
-function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, clearDirty, autoSave }) {
+function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
   const quoteRowRefs = useRef({});
   const fileInputRef = useRef(null);
-  const bookRef = useRef(book);
-  useEffect(() => { bookRef.current = book; }, [book]);
-
-  const [showSavePrompt, setShowSavePrompt] = useState(false);
-
-  // 뒤로가기 버튼을 누르는 순간(=진짜 사용자 동작) 안에서 바로 저장해야 브라우저가 다운로드를 막지 않는다.
-  const handleBack = () => {
-    autoSave(bookRef.current);
-    onBack();
-  };
-
-  // 10분 동안 움직임(입력/터치/스크롤 등)이 없으면 "저장 필요" 배너를 띄운다.
-  // (타이머로 자동 다운로드를 직접 실행하면 브라우저가 "사용자 동작이 아니다"라며 조용히 막아버려서,
-  //  배너의 버튼을 사용자가 눌러야 실제로 저장이 진행되도록 한다.)
-  useEffect(() => {
-    const INACTIVITY_MS = 10 * 60 * 1000;
-    let timer = null;
-    const resetTimer = () => {
-      if (timer) clearTimeout(timer);
-      setShowSavePrompt(false);
-      timer = setTimeout(() => {
-        if (isDirty(bookRef.current.id)) setShowSavePrompt(true);
-      }, INACTIVITY_MS);
-    };
-    const events = ["mousedown", "mousemove", "keydown", "touchstart", "scroll", "input"];
-    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
-    resetTimer();
-    return () => {
-      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
-      if (timer) clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [book.id]);
 
   const persistQuotes = (next) => onUpdateBook({ ...book, quotes: next });
 
@@ -170,7 +137,6 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, cle
 
   const exportToExcel = () => {
     XLSX.writeFile(buildQuotesWorkbook(book.title, book.quotes), buildFileName(book.title));
-    clearDirty(book.id);
   };
 
   const handleImportFile = (e) => {
@@ -186,6 +152,8 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, cle
         const imported = rows
           .map((row) => {
             const text = String(row["주요문"] ?? row["명언"] ?? row["내용"] ?? Object.values(row)[1] ?? "").trim();
+            // 번호는 아래에서 기존 항목과 합칠 때 순서를 잡는 용도로만 쓰고,
+            // 최종 저장 시에는 전체를 1,2,3...으로 다시 매기므로 이 값 자체는 내용에 들어가거나 남지 않는다.
             const numberRaw = row["번호"] ?? Object.values(row)[0];
             return { id: genId(), number: num(numberRaw) || 0, text };
           })
@@ -194,9 +162,23 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, cle
           alert("엑셀에서 읽을 수 있는 내용이 없어요. '번호'/'주요문' 열이 있는지 확인해주세요.");
           return;
         }
-        const merged = [...book.quotes, ...imported].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+        // 이미 있는 내용(정확히 같은 텍스트)은 추가하지 않는다. 가져온 목록 안에서 중복도 한 번만 남긴다.
+        const existingTexts = new Set(book.quotes.map((q) => q.text.trim()));
+        const seen = new Set();
+        const uniqueImported = [];
+        for (const q of imported) {
+          if (existingTexts.has(q.text) || seen.has(q.text)) continue;
+          seen.add(q.text);
+          uniqueImported.push(q);
+        }
+        const skipped = imported.length - uniqueImported.length;
+        if (uniqueImported.length === 0) {
+          alert("가져올 새 내용이 없어요 (전부 이미 있는 내용이에요).");
+          return;
+        }
+        const merged = [...book.quotes, ...uniqueImported].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
         persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
-        alert(`${imported.length}개를 가져왔어요.`);
+        alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (중복 ${skipped}개 제외)` : ""}`);
       } catch (err) {
         alert("엑셀 파일을 읽지 못했어요: " + (err.message || err));
       }
@@ -218,7 +200,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, cle
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
       <div style={{ padding: "0 16px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
-        <button onClick={handleBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
+        <button onClick={onBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
         <div style={{ display: "flex", gap: 6 }}>
           <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImportFile} style={{ display: "none" }} />
           <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
@@ -226,18 +208,6 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, isDirty, cle
           <button onClick={jumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📍 책갈피로</button>
         </div>
       </div>
-      {showSavePrompt && (
-        <div style={{ margin: "0 16px 14px", padding: "10px 12px", borderRadius: 10, border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12.5, color: "#e7eaf0" }}>10분째 저장 안 된 변경사항이 있어요.</span>
-          <button
-            onClick={() => { autoSave(bookRef.current); setShowSavePrompt(false); }}
-            className="iconbtn"
-            style={{ border: "1px solid #c9974a", background: "rgba(201,151,74,0.22)", color: "#c9974a", fontWeight: 700, fontSize: 12, borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap" }}
-          >
-            지금 저장
-          </button>
-        </div>
-      )}
       <div style={{ padding: "0 20px 40px" }}>
         <div style={{ marginBottom: 16 }}>
           <input
@@ -345,7 +315,6 @@ function App() {
   const [books, setBooks] = useState(loadBooks);
   const [mainView, setMainView] = useState("index"); // 'index' | 'book'
   const [currentBookId, setCurrentBookId] = useState(null);
-  const dirtyIdsRef = useRef(new Set());
 
   useEffect(() => {
     try { localStorage.setItem(BOOKS_KEY, JSON.stringify(books)); } catch (e) {}
@@ -354,21 +323,11 @@ function App() {
   const currentBook = books.find((b) => b.id === currentBookId) || null;
 
   const updateBook = (nextBook) => {
-    dirtyIdsRef.current.add(nextBook.id);
     setBooks((prev) => prev.map((b) => (b.id === nextBook.id ? nextBook : b)));
   };
   const renameBook = (title) => {
     if (!currentBook) return;
     updateBook({ ...currentBook, title });
-  };
-  const isDirty = (id) => dirtyIdsRef.current.has(id);
-  const clearDirty = (id) => { dirtyIdsRef.current.delete(id); };
-  const autoSaveBook = (bookToSave) => {
-    if (!bookToSave || !isDirty(bookToSave.id)) return;
-    try {
-      XLSX.writeFile(buildQuotesWorkbook(bookToSave.title, bookToSave.quotes), buildFileName(bookToSave.title));
-    } catch (e) {}
-    clearDirty(bookToSave.id);
   };
 
   const [newBookTitle, setNewBookTitle] = useState("");
@@ -376,7 +335,6 @@ function App() {
     const trimmed = newBookTitle.trim();
     if (!trimmed) return;
     const book = { id: genId(), title: trimmed, learnedCount: 0, bookmarkQuoteId: null, readDate: new Date().toISOString().slice(0, 10), quotes: [] };
-    dirtyIdsRef.current.add(book.id);
     setBooks((prev) => [...prev, book]);
     setNewBookTitle("");
     setCurrentBookId(book.id);
@@ -500,9 +458,6 @@ function App() {
           onBack={() => setMainView("index")}
           onUpdateBook={updateBook}
           onRenameBook={renameBook}
-          isDirty={isDirty}
-          clearDirty={clearDirty}
-          autoSave={autoSaveBook}
         />
       )}
     </div>
