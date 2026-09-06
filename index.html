@@ -164,10 +164,10 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
     XLSX.writeFile(buildQuotesWorkbook(book.title, book.quotes), buildFileName(book.title));
   };
 
-  // "3 학이시습지..." 처럼 본문 맨 앞에 붙은 "숫자 + 공백"은 순서를 잡는 데만 참고하고,
-  // 실제 저장되는 내용에서는 떼어낸다 (번호 열이 따로 없는 엑셀을 붙여넣은 경우 대비).
+  // "3 학이시습지...", "7.  그가..." 처럼 본문 맨 앞에 붙은 "숫자(+마침표/괄호 등) + 공백"은
+  // 순서를 잡는 데만 참고하고, 실제 저장되는 내용에서는 떼어낸다.
   const splitLeadingNumber = (raw) => {
-    const m = raw.match(/^\s*(\d+)\s+(\S[\s\S]*)$/);
+    const m = raw.match(/^\s*(\d{1,4})\s*[.)\-:]?\s+(\S[\s\S]*)$/);
     if (!m) return { leadingNumber: null, text: raw.trim() };
     return { leadingNumber: num(m[1]), text: m[2].trim() };
   };
@@ -222,6 +222,22 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
 
   const [titleDraft, setTitleDraft] = useState(book.title || "");
   useEffect(() => { setTitleDraft(book.title || ""); }, [book.id]);
+
+  // 이미 저장돼 있는 주요문들 중 맨 앞에 "숫자(+마침표 등)+공백"이 그대로 남아있는 것을 한 번에 정리한다.
+  const cleanupLeadingNumbers = () => {
+    let changedCount = 0;
+    const cleaned = book.quotes.map((q) => {
+      const { text } = splitLeadingNumber(q.text);
+      if (text !== q.text) changedCount++;
+      return { ...q, text };
+    });
+    if (changedCount === 0) {
+      alert("정리할 항목이 없어요.");
+      return;
+    }
+    persistQuotes(cleaned);
+    alert(`${changedCount}개 항목에서 앞머리 숫자를 정리했어요.`);
+  };
 
   const filteredQuotes = [...book.quotes]
     .filter((q) => {
@@ -301,13 +317,22 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
 
         <div style={{ fontSize: 11.5, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
 
-        <input
-          value={quoteSearchQuery}
-          onChange={(e) => setQuoteSearchQuery(e.target.value)}
-          placeholder="🔍 주요문 검색 (번호 또는 내용)"
-          className="field"
-          style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
-        />
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <input
+            value={quoteSearchQuery}
+            onChange={(e) => setQuoteSearchQuery(e.target.value)}
+            placeholder="🔍 주요문 검색 (번호 또는 내용)"
+            className="field"
+            style={{ flex: 1, fontSize: 14, padding: "8px 10px" }}
+          />
+          <button
+            onClick={cleanupLeadingNumbers}
+            className="iconbtn"
+            style={{ border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, borderRadius: 8, padding: "0 10px", whiteSpace: "nowrap" }}
+          >
+            🧹 번호정리
+          </button>
+        </div>
 
         {filteredQuotes.map((q) => (
           <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8, padding: "4px 8px", borderRadius: 8, background: q.id === book.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
