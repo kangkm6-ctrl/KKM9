@@ -66,6 +66,14 @@ const textSimilarity = (a, b) => {
 };
 const isDuplicateText = (text, others, threshold = 0.8) => others.some((t) => textSimilarity(text, t) >= threshold);
 
+// "3 학이시습지...", "7.  그가..." 처럼 본문 맨 앞에 붙은 "숫자(+마침표/괄호 등) + 공백"은
+// 순서를 잡는 데만 참고하고, 실제 저장되는 내용에서는 떼어낸다.
+const splitLeadingNumber = (raw) => {
+  const m = raw.match(/^\s*(\d{1,4})\s*[.)\-:]?\s+(\S[\s\S]*)$/);
+  if (!m) return { leadingNumber: null, text: raw.trim() };
+  return { leadingNumber: num(m[1]), text: m[2].trim() };
+};
+
 const buildQuotesWorkbook = (title, quotes) => {
   const rows = [...quotes]
     .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
@@ -99,6 +107,68 @@ function loadBooks() {
     const saved = JSON.parse(localStorage.getItem(BOOKS_KEY));
     return Array.isArray(saved) && saved.length > 0 ? saved : seedBooks;
   } catch (e) { return seedBooks; }
+}
+
+// ---- 교회설교요약 ----
+const SERMONS_KEY = "reading-summary-sermons-v1";
+const DEFAULT_PREACHER = "이규현 목사";
+
+const toDateStr = (d) => {
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth() + 1);
+  const day = pad2(d.getDate());
+  return `${y}-${m}-${day}`;
+};
+const mostRecentSunday = (base) => {
+  const d = new Date(base);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay()); // getDay(): 0=일요일
+  return d;
+};
+const makeSermon = (dateStr, preacher) => ({
+  id: genId(),
+  date: dateStr,
+  title: "",
+  scripture: "",
+  preacher: preacher || DEFAULT_PREACHER,
+  learnedCount: 0,
+  bookmarkQuoteId: null,
+  quotes: [],
+});
+
+// 마지막으로 만들어둔 설교 날짜 다음 주부터, 오늘이 속한 주의 일요일까지 빠진 일요일을 채워 넣는다.
+// (웹앱은 앱이 닫혀있는 동안 정확히 "일요일 오전 5시"에 실행될 수는 없어서, 다음에 앱을 열 때 놓친 주를 한번에 보충한다.)
+const ensureSundays = (list) => {
+  const latestSunday = mostRecentSunday(new Date());
+  const next = [...list];
+  const existingDates = new Set(next.map((s) => s.date));
+  if (next.length === 0) {
+    const s = makeSermon(toDateStr(latestSunday));
+    next.push(s);
+    return next;
+  }
+  const lastPreacher = next.reduce((latest, s) => (s.date > latest.date ? s : latest), next[0]).preacher;
+  let maxDateStr = next.reduce((m, s) => (s.date > m ? s.date : m), next[0].date);
+  let cursor = new Date(maxDateStr);
+  cursor.setDate(cursor.getDate() + 7);
+  while (cursor <= latestSunday) {
+    const ds = toDateStr(cursor);
+    if (!existingDates.has(ds)) {
+      next.push(makeSermon(ds, lastPreacher));
+      existingDates.add(ds);
+    }
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return next;
+};
+
+function loadSermons() {
+  let list = [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(SERMONS_KEY));
+    if (Array.isArray(saved)) list = saved;
+  } catch (e) { list = []; }
+  return ensureSundays(list);
 }
 
 function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
@@ -164,14 +234,6 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
     XLSX.writeFile(buildQuotesWorkbook(book.title, book.quotes), buildFileName(book.title));
   };
 
-  // "3 학이시습지...", "7.  그가..." 처럼 본문 맨 앞에 붙은 "숫자(+마침표/괄호 등) + 공백"은
-  // 순서를 잡는 데만 참고하고, 실제 저장되는 내용에서는 떼어낸다.
-  const splitLeadingNumber = (raw) => {
-    const m = raw.match(/^\s*(\d{1,4})\s*[.)\-:]?\s+(\S[\s\S]*)$/);
-    if (!m) return { leadingNumber: null, text: raw.trim() };
-    return { leadingNumber: num(m[1]), text: m[2].trim() };
-  };
-
   const handleImportFile = (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
@@ -222,22 +284,6 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
 
   const [titleDraft, setTitleDraft] = useState(book.title || "");
   useEffect(() => { setTitleDraft(book.title || ""); }, [book.id]);
-
-  // 이미 저장돼 있는 주요문들 중 맨 앞에 "숫자(+마침표 등)+공백"이 그대로 남아있는 것을 한 번에 정리한다.
-  const cleanupLeadingNumbers = () => {
-    let changedCount = 0;
-    const cleaned = book.quotes.map((q) => {
-      const { text } = splitLeadingNumber(q.text);
-      if (text !== q.text) changedCount++;
-      return { ...q, text };
-    });
-    if (changedCount === 0) {
-      alert("정리할 항목이 없어요.");
-      return;
-    }
-    persistQuotes(cleaned);
-    alert(`${changedCount}개 항목에서 앞머리 숫자를 정리했어요.`);
-  };
 
   const filteredQuotes = [...book.quotes]
     .filter((q) => {
@@ -317,22 +363,13 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
 
         <div style={{ fontSize: 11.5, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <input
-            value={quoteSearchQuery}
-            onChange={(e) => setQuoteSearchQuery(e.target.value)}
-            placeholder="🔍 주요문 검색 (번호 또는 내용)"
-            className="field"
-            style={{ flex: 1, fontSize: 14, padding: "8px 10px" }}
-          />
-          <button
-            onClick={cleanupLeadingNumbers}
-            className="iconbtn"
-            style={{ border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, borderRadius: 8, padding: "0 10px", whiteSpace: "nowrap" }}
-          >
-            🧹 번호정리
-          </button>
-        </div>
+        <input
+          value={quoteSearchQuery}
+          onChange={(e) => setQuoteSearchQuery(e.target.value)}
+          placeholder="🔍 주요문 검색 (번호 또는 내용)"
+          className="field"
+          style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
+        />
 
         {filteredQuotes.map((q) => (
           <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8, padding: "4px 8px", borderRadius: 8, background: q.id === book.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
@@ -370,16 +407,380 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
   );
 }
 
+function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
+  const [newQuoteNumber, setNewQuoteNumber] = useState("");
+  const [newQuoteText, setNewQuoteText] = useState("");
+  const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
+  const quoteRowRefs = useRef({});
+  const fileInputRef = useRef(null);
+
+  const persistQuotes = (next) => onUpdateSermon({ ...sermon, quotes: next });
+
+  const renumberQuotes = (list) => [...list]
+    .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
+    .map((q, idx) => ({ ...q, number: idx + 1 }));
+
+  const addQuote = () => {
+    const text = newQuoteText.trim();
+    if (!text) return;
+    const maxNum = sermon.quotes.reduce((m, q) => Math.max(m, num(q.number) || 0), 0);
+    const number = newQuoteNumber.trim() ? num(newQuoteNumber) : maxNum + 1;
+    persistQuotes([...sermon.quotes, { id: genId(), number, text }]);
+    setNewQuoteNumber("");
+    setNewQuoteText("");
+  };
+
+  const updateQuoteNumber = (id, value) => {
+    const parsed = Number(value);
+    if (value.trim() === "" || !Number.isFinite(parsed)) {
+      persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, number: value } : q)));
+      return;
+    }
+    const targetNum = Math.max(parsed, sermon.learnedCount || 0);
+    const editedItem = sermon.quotes.find((q) => q.id === id);
+    const rest = sermon.quotes.filter((q) => q.id !== id).sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+    const insertAt = Math.max(0, Math.min(rest.length, Math.round(targetNum) - 1));
+    const reordered = [...rest.slice(0, insertAt), editedItem, ...rest.slice(insertAt)];
+    persistQuotes(reordered.map((q, idx) => ({ ...q, number: idx + 1 })));
+  };
+
+  const updateQuoteText = (id, value) => {
+    if (value.trim() === "") {
+      persistQuotes(renumberQuotes(sermon.quotes.filter((q) => q.id !== id)));
+      return;
+    }
+    persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, text: value } : q)));
+  };
+
+  const toggleBookmark = (id) => {
+    onUpdateSermon({ ...sermon, bookmarkQuoteId: sermon.bookmarkQuoteId === id ? null : id });
+  };
+
+  const jumpToBookmark = () => {
+    const node = sermon.bookmarkQuoteId && quoteRowRefs.current[sermon.bookmarkQuoteId];
+    if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  const setLearnedCount = (v) => {
+    const n = Number(v);
+    onUpdateSermon({ ...sermon, learnedCount: Number.isFinite(n) && n >= 0 ? n : 0 });
+  };
+
+  const fileBaseName = () => sermon.title && sermon.title.trim() ? sermon.title : sermon.date;
+
+  const exportToExcel = () => {
+    XLSX.writeFile(buildQuotesWorkbook(fileBaseName(), sermon.quotes), buildFileName(fileBaseName()));
+  };
+
+  const handleImportFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        const imported = rows
+          .map((row) => {
+            const rawText = String(row["주요문"] ?? row["명언"] ?? row["내용"] ?? Object.values(row)[1] ?? "").trim();
+            const { leadingNumber, text } = splitLeadingNumber(rawText);
+            const numberRaw = row["번호"] ?? Object.values(row)[0];
+            const number = num(numberRaw) || leadingNumber || 0;
+            return { id: genId(), number, text };
+          })
+          .filter((q) => q.text);
+        if (imported.length === 0) {
+          alert("엑셀에서 읽을 수 있는 내용이 없어요. '번호'/'주요문' 열이 있는지 확인해주세요.");
+          return;
+        }
+        const acceptedTexts = sermon.quotes.map((q) => q.text);
+        const uniqueImported = [];
+        for (const q of imported) {
+          if (isDuplicateText(q.text, acceptedTexts)) continue;
+          acceptedTexts.push(q.text);
+          uniqueImported.push(q);
+        }
+        const skipped = imported.length - uniqueImported.length;
+        if (uniqueImported.length === 0) {
+          alert("가져올 새 내용이 없어요 (전부 이미 있는 내용과 80% 이상 비슷해요).");
+          return;
+        }
+        const merged = [...sermon.quotes, ...uniqueImported].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+        persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
+        alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}`);
+      } catch (err) {
+        alert("엑셀 파일을 읽지 못했어요: " + (err.message || err));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const filteredQuotes = [...sermon.quotes]
+    .filter((q) => {
+      const query = quoteSearchQuery.trim().toLowerCase();
+      if (!query) return true;
+      return q.text.toLowerCase().includes(query) || String(q.number).includes(query);
+    })
+    .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+
+  return (
+    <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
+      <div style={{ padding: "0 16px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+        <button onClick={onBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImportFile} style={{ display: "none" }} />
+          <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
+          <button onClick={exportToExcel} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
+          <button onClick={jumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📍 책갈피로</button>
+        </div>
+      </div>
+      <div style={{ padding: "0 20px 40px" }}>
+        <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 44 }}>날짜</span>
+            <input
+              type="date"
+              value={sermon.date}
+              onChange={(e) => onUpdateSermon({ ...sermon, date: e.target.value })}
+              className="field"
+              style={{ width: "33%", flexShrink: 0, fontSize: 15, fontWeight: 700, color: "#c9974a", padding: "8px 10px" }}
+            />
+            <input
+              value={quoteSearchQuery}
+              onChange={(e) => setQuoteSearchQuery(e.target.value)}
+              placeholder="🔍 주요문 검색"
+              className="field"
+              style={{ flex: 1, minWidth: 0, fontSize: 14, padding: "8px 10px" }}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 44 }}>제목</span>
+            <input
+              value={sermon.title}
+              onChange={(e) => onUpdateSermon({ ...sermon, title: e.target.value })}
+              placeholder="설교 제목"
+              className="field"
+              style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 800, color: "#e7eaf0", padding: "8px 10px" }}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 44 }}>성경</span>
+            <input
+              value={sermon.scripture}
+              onChange={(e) => onUpdateSermon({ ...sermon, scripture: e.target.value })}
+              placeholder="예: 요한복음 3장 16절"
+              className="field"
+              style={{ flex: 1, minWidth: 0, fontSize: 14, color: "#e7eaf0", padding: "8px 10px" }}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 44 }}>강사</span>
+            <input
+              value={sermon.preacher}
+              onChange={(e) => onUpdateSermon({ ...sermon, preacher: e.target.value })}
+              placeholder={DEFAULT_PREACHER}
+              list="preacher-options"
+              className="field"
+              style={{ flex: 1, minWidth: 0, fontSize: 14, color: "#e7eaf0", padding: "8px 10px" }}
+            />
+            <datalist id="preacher-options">
+              {preacherOptions.map((p) => <option key={p} value={p} />)}
+            </datalist>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 11, color: "#8993a6" }}>익힘</span>
+            <input
+              value={sermon.learnedCount || 0}
+              onChange={(e) => setLearnedCount(e.target.value)}
+              inputMode="numeric"
+              className="field"
+              style={{ width: 40, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "5px 2px" }}
+            />
+            <span style={{ fontSize: 11, color: "#8993a6" }}>번</span>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #262c37" }}>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <input
+              value={newQuoteNumber}
+              onChange={(e) => setNewQuoteNumber(e.target.value)}
+              placeholder="번호"
+              inputMode="numeric"
+              className="field"
+              style={{ width: 44, flexShrink: 0, fontSize: 15, textAlign: "center", padding: "6px 2px" }}
+            />
+            <textarea
+              value={newQuoteText}
+              onChange={(e) => setNewQuoteText(e.target.value)}
+              onBlur={addQuote}
+              placeholder="내용을 입력하거나 붙여넣으세요"
+              className="field"
+              rows={3}
+              style={{ flex: 1, fontSize: 15, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
+            />
+          </div>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
+
+        {filteredQuotes.map((q) => (
+          <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8, padding: "4px 8px", borderRadius: 8, background: q.id === sermon.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
+              <input
+                value={q.number}
+                onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
+                inputMode="numeric"
+                className="field"
+                style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
+              />
+              <input
+                type="checkbox"
+                checked={q.id === sermon.bookmarkQuoteId}
+                onChange={() => toggleBookmark(q.id)}
+                style={{ width: 16, height: 16, accentColor: "#c9974a", flexShrink: 0 }}
+              />
+            </div>
+            <textarea
+              ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+              value={q.text}
+              onChange={(e) => {
+                updateQuoteText(q.id, e.target.value);
+                e.target.style.height = "auto";
+                e.target.style.height = e.target.scrollHeight + "px";
+              }}
+              className="field"
+              rows={1}
+              style={{ flex: 1, fontSize: 16, color: "#e7eaf0", lineHeight: 1.5, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SermonListView({ sermons, onOpenSermon, onAddSermon, onDeleteSermon, confirmDeleteId, onRequestDelete, onCancelDelete, newSermonDate, onChangeNewSermonDate, onBackToReading }) {
+  const sorted = [...sermons].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  const fmtDate = (ds) => {
+    if (!ds) return ds;
+    const d = new Date(ds);
+    const days = ["일", "월", "화", "수", "목", "금", "토"];
+    return `${ds} (${days[d.getDay()]})`;
+  };
+
+  return (
+    <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
+      <button onClick={onBackToReading} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>← 독서요약집으로</button>
+      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>⛪ 교회설교요약</div>
+      <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>
+        매주 일요일 날짜가 자동으로 추가돼요(앱을 열 때 그 사이 빠진 주를 채워 넣어요). 필요하면 날짜를 직접 추가할 수도 있어요.
+      </div>
+
+      {sorted.length === 0 && (
+        <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 설교가 없어요.</div>
+      )}
+
+      {sorted.map((s) => (
+        <div
+          key={s.id}
+          onClick={() => onOpenSermon(s.id)}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", marginBottom: 10, cursor: "pointer" }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, color: "#c9974a", fontWeight: 700 }}>{fmtDate(s.date)}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
+              {s.title && s.title.trim() ? s.title : "(제목 없음)"}
+            </div>
+            <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
+              {s.scripture ? `${s.scripture} · ` : ""}{s.preacher || DEFAULT_PREACHER} · 주요문 {s.quotes.length}개
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            {confirmDeleteId === s.id ? (
+              <>
+                <span style={{ fontSize: 11, color: "#e8544b", fontWeight: 700, whiteSpace: "nowrap" }}>삭제할까요?</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDeleteSermon(s.id); }}
+                  className="iconbtn"
+                  style={{ border: "1px solid #e8544b", background: "rgba(232,84,75,0.22)", color: "#e8544b", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
+                >
+                  삭제
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onCancelDelete(); }}
+                  className="iconbtn"
+                  style={{ border: "1px solid #3a4150", background: "transparent", color: "#8993a6", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
+                >
+                  취소
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRequestDelete(s.id); }}
+                  className="iconbtn"
+                  style={{ border: "1px solid #e8544b", background: "rgba(232,84,75,0.12)", color: "#e8544b", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
+                >
+                  🗑 삭제
+                </button>
+                <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
+              </>
+            )}
+          </div>
+        </div>
+      ))}
+
+      <div style={{ marginTop: 6 }}>
+        <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>날짜를 직접 추가하기</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="date"
+            value={newSermonDate}
+            onChange={(e) => onChangeNewSermonDate(e.target.value)}
+            className="field"
+            style={{ flex: 1, fontSize: 14, padding: "10px 12px" }}
+          />
+          <button
+            onClick={onAddSermon}
+            className="iconbtn"
+            style={{ border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, fontSize: 13, borderRadius: 10, padding: "0 16px", whiteSpace: "nowrap" }}
+          >
+            + 추가
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [books, setBooks] = useState(loadBooks);
   const [mainView, setMainView] = useState("index"); // 'index' | 'book'
   const [currentBookId, setCurrentBookId] = useState(null);
 
+  const [mainSection, setMainSection] = useState("reading"); // 'reading' | 'sermon'
+  const [sermons, setSermons] = useState(loadSermons);
+  const [sermonView, setSermonView] = useState("list"); // 'list' | 'detail'
+  const [currentSermonId, setCurrentSermonId] = useState(null);
+  const [newSermonDate, setNewSermonDate] = useState("");
+  const [confirmDeleteSermonId, setConfirmDeleteSermonId] = useState(null);
+
   useEffect(() => {
     try { localStorage.setItem(BOOKS_KEY, JSON.stringify(books)); } catch (e) {}
   }, [books]);
 
+  useEffect(() => {
+    try { localStorage.setItem(SERMONS_KEY, JSON.stringify(sermons)); } catch (e) {}
+  }, [sermons]);
+
   const currentBook = books.find((b) => b.id === currentBookId) || null;
+  const currentSermon = sermons.find((s) => s.id === currentSermonId) || null;
+  const preacherOptions = Array.from(new Set([DEFAULT_PREACHER, ...sermons.map((s) => s.preacher).filter(Boolean)]));
 
   const updateBook = (nextBook) => {
     setBooks((prev) => prev.map((b) => (b.id === nextBook.id ? nextBook : b)));
@@ -387,6 +788,31 @@ function App() {
   const renameBook = (title) => {
     if (!currentBook) return;
     updateBook({ ...currentBook, title });
+  };
+
+  const updateSermon = (nextSermon) => {
+    setSermons((prev) => prev.map((s) => (s.id === nextSermon.id ? nextSermon : s)));
+  };
+  const addSermon = () => {
+    if (!newSermonDate) return;
+    if (sermons.some((s) => s.date === newSermonDate)) {
+      alert("이미 그 날짜의 설교가 있어요.");
+      return;
+    }
+    const lastPreacher = sermons.length
+      ? sermons.reduce((latest, s) => (s.date > latest.date ? s : latest), sermons[0]).preacher
+      : DEFAULT_PREACHER;
+    const s = makeSermon(newSermonDate, lastPreacher);
+    setSermons((prev) => [...prev, s]);
+    setNewSermonDate("");
+    setCurrentSermonId(s.id);
+    setSermonView("detail");
+  };
+  const requestDeleteSermon = (id) => setConfirmDeleteSermonId(id);
+  const cancelDeleteSermon = () => setConfirmDeleteSermonId(null);
+  const deleteSermon = (id) => {
+    setSermons((prev) => prev.filter((s) => s.id !== id));
+    setConfirmDeleteSermonId(null);
   };
 
   const [newBookTitle, setNewBookTitle] = useState("");
@@ -414,6 +840,40 @@ function App() {
     setBooks((prev) => prev.filter((b) => b.id !== id));
     setConfirmDeleteId(null);
   };
+
+  if (mainSection === "sermon") {
+    return (
+      <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+        <style>{`
+          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
+          .field:focus { outline:none; border-color:#c9974a; }
+          .iconbtn { background:none; border:none; cursor:pointer; }
+        `}</style>
+        {sermonView === "list" && (
+          <SermonListView
+            sermons={sermons}
+            onOpenSermon={(id) => { setCurrentSermonId(id); setSermonView("detail"); }}
+            onAddSermon={addSermon}
+            onDeleteSermon={deleteSermon}
+            confirmDeleteId={confirmDeleteSermonId}
+            onRequestDelete={requestDeleteSermon}
+            onCancelDelete={cancelDeleteSermon}
+            newSermonDate={newSermonDate}
+            onChangeNewSermonDate={setNewSermonDate}
+            onBackToReading={() => setMainSection("reading")}
+          />
+        )}
+        {sermonView === "detail" && currentSermon && (
+          <SermonDetailView
+            sermon={currentSermon}
+            onBack={() => setSermonView("list")}
+            onUpdateSermon={updateSermon}
+            preacherOptions={preacherOptions}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
@@ -507,6 +967,20 @@ function App() {
                 + 추가
               </button>
             </div>
+          </div>
+
+          <div
+            onClick={() => setMainSection("sermon")}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #3a4150", borderRadius: 12, padding: "14px 16px", marginTop: 22, cursor: "pointer" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 22 }}>⛪</span>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0" }}>교회설교요약</div>
+                <div style={{ fontSize: 11.5, color: "#8993a6", marginTop: 2 }}>{sermons.length}개의 주일 설교</div>
+              </div>
+            </div>
+            <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
           </div>
         </div>
       )}
