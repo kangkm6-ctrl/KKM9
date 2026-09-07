@@ -586,71 +586,71 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
       <div style={{ padding: "0 20px 40px" }}>
         <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 44 }}>날짜</span>
+            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 48 }}>날짜</span>
             <input
               type="date"
               value={sermon.date}
               onChange={(e) => onUpdateSermon({ ...sermon, date: e.target.value })}
               className="field"
-              style={{ width: "33%", flexShrink: 0, fontSize: 16, fontWeight: 700, color: "#c9974a", padding: "8px 10px" }}
+              style={{ width: "33%", flexShrink: 0, fontSize: 18, fontWeight: 700, color: "#c9974a", padding: "9px 10px" }}
             />
             <input
               value={quoteSearchQuery}
               onChange={(e) => setQuoteSearchQuery(e.target.value)}
               placeholder="🔍 주요문 검색"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 14, padding: "8px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 16, padding: "9px 10px" }}
             />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 44 }}>제목</span>
+            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 48 }}>제목</span>
             <input
               value={sermon.title}
               onChange={(e) => onUpdateSermon({ ...sermon, title: e.target.value })}
               placeholder="설교 제목"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 800, color: "#e7eaf0", padding: "8px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 19, fontWeight: 800, color: "#e7eaf0", padding: "9px 10px" }}
             />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 44 }}>성경</span>
+            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 48 }}>성경</span>
             <input
               value={sermon.scripture}
               onChange={(e) => onUpdateSermon({ ...sermon, scripture: e.target.value })}
               placeholder="예: 요한복음 3장 16절"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 16, color: "#e7eaf0", padding: "8px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 18, color: "#e7eaf0", padding: "9px 10px" }}
             />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 44 }}>강사</span>
+            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 48 }}>강사</span>
             <input
               value={sermon.preacher}
               onChange={(e) => onUpdateSermon({ ...sermon, preacher: e.target.value })}
               placeholder={DEFAULT_PREACHER}
               list="preacher-options"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 16, color: "#e7eaf0", padding: "8px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 18, color: "#e7eaf0", padding: "9px 10px" }}
             />
             <datalist id="preacher-options">
               {preacherOptions.map((p) => <option key={p} value={p} />)}
             </datalist>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
-            <span style={{ fontSize: 11, color: "#8993a6" }}>익힘</span>
+            <span style={{ fontSize: 13, color: "#8993a6" }}>익힘</span>
             <input
               value={sermon.learnedCount || 0}
               onChange={(e) => setLearnedCount(e.target.value)}
               inputMode="numeric"
               className="field"
-              style={{ width: 40, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "5px 2px" }}
+              style={{ width: 44, fontSize: 15, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "5px 2px" }}
             />
-            <span style={{ fontSize: 11, color: "#8993a6" }}>번</span>
+            <span style={{ fontSize: 13, color: "#8993a6" }}>번</span>
           </div>
         </div>
 
         <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #262c37" }}>
-          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
+          <div style={{ fontSize: 13.5, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
             <input
               value={newQuoteNumber}
@@ -658,7 +658,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
               placeholder="번호"
               inputMode="numeric"
               className="field"
-              style={{ width: 44, flexShrink: 0, fontSize: 15, textAlign: "center", padding: "6px 2px" }}
+              style={{ width: 48, flexShrink: 0, fontSize: 17, textAlign: "center", padding: "6px 2px" }}
             />
             <textarea
               value={newQuoteText}
@@ -667,12 +667,12 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
               placeholder="내용을 입력하거나 붙여넣으세요"
               className="field"
               rows={3}
-              style={{ flex: 1, fontSize: 15, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
+              style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
             />
           </div>
         </div>
 
-        <div style={{ fontSize: 11.5, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
+        <div style={{ fontSize: 13, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
 
         {filteredQuotes.map((q) => (
           <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8, padding: "4px 8px", borderRadius: 8, background: q.id === sermon.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
@@ -682,7 +682,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
                 onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
                 inputMode="numeric"
                 className="field"
-                style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
+                style={{ width: 34, fontSize: 16, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
               />
               <input
                 type="checkbox"
@@ -701,7 +701,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
               }}
               className="field"
               rows={1}
-              style={{ flex: 1, fontSize: 16, color: "#e7eaf0", lineHeight: 1.5, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+              style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.55, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
             />
           </div>
         ))}
