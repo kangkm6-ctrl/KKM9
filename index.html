@@ -311,7 +311,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
             onChange={(e) => setTitleDraft(e.target.value)}
             onBlur={() => onRenameBook(titleDraft.trim() || "(제목 없음)")}
             placeholder="책 제목"
-            style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontSize: 23, fontWeight: 800, color: "#e7eaf0", lineHeight: 1.4, padding: 0, marginBottom: 10 }}
+            style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontSize: 27, fontWeight: 800, color: "#e7eaf0", lineHeight: 1.4, padding: 0, marginBottom: 10 }}
           />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
@@ -946,7 +946,7 @@ function App() {
 
       {mainView === "index" && (
         <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>📚 독서요약집</div>
+          <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4 }}>📚 독서요약집</div>
           <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요.</div>
 
           {books.length === 0 && (
