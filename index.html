@@ -592,7 +592,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
               value={sermon.date}
               onChange={(e) => onUpdateSermon({ ...sermon, date: e.target.value })}
               className="field"
-              style={{ width: "33%", flexShrink: 0, fontSize: 15, fontWeight: 700, color: "#c9974a", padding: "8px 10px" }}
+              style={{ width: "33%", flexShrink: 0, fontSize: 16, fontWeight: 700, color: "#c9974a", padding: "8px 10px" }}
             />
             <input
               value={quoteSearchQuery}
@@ -619,7 +619,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
               onChange={(e) => onUpdateSermon({ ...sermon, scripture: e.target.value })}
               placeholder="예: 요한복음 3장 16절"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 14, color: "#e7eaf0", padding: "8px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 16, color: "#e7eaf0", padding: "8px 10px" }}
             />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -630,7 +630,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
               placeholder={DEFAULT_PREACHER}
               list="preacher-options"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 14, color: "#e7eaf0", padding: "8px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 16, color: "#e7eaf0", padding: "8px 10px" }}
             />
             <datalist id="preacher-options">
               {preacherOptions.map((p) => <option key={p} value={p} />)}
