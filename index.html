@@ -574,7 +574,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
 
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
-      <div style={{ padding: "0 16px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+      <div style={{ padding: "0 10px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
         <button onClick={onBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
         <div style={{ display: "flex", gap: 6 }}>
           <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImportFile} style={{ display: "none" }} />
@@ -583,10 +583,10 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
           <button onClick={jumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📍 책갈피로</button>
         </div>
       </div>
-      <div style={{ padding: "0 20px 40px" }}>
+      <div style={{ padding: "0 8px 40px" }}>
         <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 48 }}>날짜</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 40 }}>날짜</span>
             <input
               type="date"
               value={sermon.date}
@@ -602,8 +602,8 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
               style={{ flex: 1, minWidth: 0, fontSize: 16, padding: "9px 10px" }}
             />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 48 }}>제목</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 40 }}>제목</span>
             <input
               value={sermon.title}
               onChange={(e) => onUpdateSermon({ ...sermon, title: e.target.value })}
@@ -612,8 +612,8 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
               style={{ flex: 1, minWidth: 0, fontSize: 19, fontWeight: 800, color: "#e7eaf0", padding: "9px 10px" }}
             />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 48 }}>성경</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 40 }}>성경</span>
             <input
               value={sermon.scripture}
               onChange={(e) => onUpdateSermon({ ...sermon, scripture: e.target.value })}
@@ -622,8 +622,8 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
               style={{ flex: 1, minWidth: 0, fontSize: 18, color: "#e7eaf0", padding: "9px 10px" }}
             />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 48 }}>강사</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 40 }}>강사</span>
             <input
               value={sermon.preacher}
               onChange={(e) => onUpdateSermon({ ...sermon, preacher: e.target.value })}
