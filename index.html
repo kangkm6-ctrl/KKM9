@@ -481,18 +481,64 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
       try {
         const wb = XLSX.read(evt.target.result, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-        const imported = rows
-          .map((row) => {
-            const rawText = String(row["주요문"] ?? row["명언"] ?? row["내용"] ?? Object.values(row)[1] ?? "").trim();
-            const { leadingNumber, text } = splitLeadingNumber(rawText);
-            const numberRaw = row["번호"] ?? Object.values(row)[0];
-            const number = num(numberRaw) || leadingNumber || 0;
-            return { id: genId(), number, text };
-          })
-          .filter((q) => q.text);
+
+        // 한 열에 "2026년9월6일 / 제목 : ... / 성경 : ... / 강사 : ... / 1. 내용 / 2. 내용 ..." 처럼
+        // 줄 단위로 정리된 설교 노트 형식인지 먼저 확인한다.
+        const raw2d = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        const firstCells = raw2d.slice(0, 8).map((r) => String((r && r[0]) ?? "").trim());
+        const looksLikeSermonNote =
+          firstCells.some((c) => /^제목\s*[:：]/.test(c)) ||
+          firstCells.some((c) => /^성경\s*[:：]/.test(c)) ||
+          firstCells.some((c) => /^강사\s*[:：]/.test(c));
+
+        let imported = [];
+        let fieldUpdates = null;
+
+        if (looksLikeSermonNote) {
+          let title = null, scripture = null, preacher = null, dateStr = null;
+          const contentLines = [];
+          for (const r of raw2d) {
+            const cell = String((r && r[0]) ?? "");
+            const trimmed = cell.trim();
+            if (!trimmed) continue;
+            let m;
+            if ((m = trimmed.match(/^제목\s*[:：]\s*(.*)$/))) { title = m[1].trim(); continue; }
+            if ((m = trimmed.match(/^성경\s*[:：]\s*(.*)$/))) { scripture = m[1].trim(); continue; }
+            if ((m = trimmed.match(/^강사\s*[:：]\s*(.*)$/))) { preacher = m[1].trim(); continue; }
+            if ((m = trimmed.match(/^(\d{4})[년.\-\/](\d{1,2})[월.\-\/](\d{1,2})\s*일?$/))) {
+              dateStr = `${m[1]}-${pad2(Number(m[2]))}-${pad2(Number(m[3]))}`;
+              continue;
+            }
+            const normalized = cell.replace(/\t/g, " ").replace(/\s+/g, " ").trim();
+            if (normalized) contentLines.push(normalized);
+          }
+          imported = contentLines
+            .map((line) => {
+              const { text } = splitLeadingNumber(line);
+              return { id: genId(), number: 0, text };
+            })
+            .filter((q) => q.text)
+            .map((q, idx) => ({ ...q, number: idx + 1 }));
+          fieldUpdates = {};
+          if (dateStr) fieldUpdates.date = dateStr;
+          if (title) fieldUpdates.title = title;
+          if (scripture) fieldUpdates.scripture = scripture;
+          if (preacher) fieldUpdates.preacher = preacher;
+        } else {
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+          imported = rows
+            .map((row) => {
+              const rawText = String(row["주요문"] ?? row["명언"] ?? row["내용"] ?? Object.values(row)[1] ?? "").trim();
+              const { leadingNumber, text } = splitLeadingNumber(rawText);
+              const numberRaw = row["번호"] ?? Object.values(row)[0];
+              const number = num(numberRaw) || leadingNumber || 0;
+              return { id: genId(), number, text };
+            })
+            .filter((q) => q.text);
+        }
+
         if (imported.length === 0) {
-          alert("엑셀에서 읽을 수 있는 내용이 없어요. '번호'/'주요문' 열이 있는지 확인해주세요.");
+          alert("엑셀에서 읽을 수 있는 내용이 없어요.");
           return;
         }
         const acceptedTexts = sermon.quotes.map((q) => q.text);
@@ -503,13 +549,14 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
           uniqueImported.push(q);
         }
         const skipped = imported.length - uniqueImported.length;
-        if (uniqueImported.length === 0) {
+        if (uniqueImported.length === 0 && !fieldUpdates) {
           alert("가져올 새 내용이 없어요 (전부 이미 있는 내용과 80% 이상 비슷해요).");
           return;
         }
         const merged = [...sermon.quotes, ...uniqueImported].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
-        persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
-        alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}`);
+        const renumbered = merged.map((q, idx) => ({ ...q, number: idx + 1 }));
+        onUpdateSermon({ ...sermon, ...(fieldUpdates || {}), quotes: renumbered });
+        alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}${fieldUpdates ? " 날짜/제목/성경/강사도 함께 채웠어요." : ""}`);
       } catch (err) {
         alert("엑셀 파일을 읽지 못했어요: " + (err.message || err));
       }
