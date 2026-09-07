@@ -295,7 +295,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
 
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
-      <div style={{ padding: "0 16px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+      <div style={{ padding: "0 10px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
         <button onClick={onBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
         <div style={{ display: "flex", gap: 6 }}>
           <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImportFile} style={{ display: "none" }} />
@@ -304,42 +304,42 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
           <button onClick={jumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📍 책갈피로</button>
         </div>
       </div>
-      <div style={{ padding: "0 20px 40px" }}>
+      <div style={{ padding: "0 8px 40px" }}>
         <div style={{ marginBottom: 16 }}>
           <input
             value={titleDraft}
             onChange={(e) => setTitleDraft(e.target.value)}
             onBlur={() => onRenameBook(titleDraft.trim() || "(제목 없음)")}
             placeholder="책 제목"
-            style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontSize: 22, fontWeight: 800, color: "#e7eaf0", lineHeight: 1.4, padding: 0, marginBottom: 10 }}
+            style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontSize: 23, fontWeight: 800, color: "#e7eaf0", lineHeight: 1.4, padding: 0, marginBottom: 10 }}
           />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-              <span style={{ fontSize: 11, color: "#8993a6" }}>읽은날짜</span>
+              <span style={{ fontSize: 12, color: "#8993a6" }}>읽은날짜</span>
               <input
                 type="date"
                 value={book.readDate || ""}
                 onChange={(e) => onUpdateBook({ ...book, readDate: e.target.value })}
                 className="field"
-                style={{ width: 128, fontSize: 12, fontWeight: 700, color: "#c9974a", padding: "5px 4px" }}
+                style={{ width: 132, fontSize: 13, fontWeight: 700, color: "#c9974a", padding: "5px 4px" }}
               />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-              <span style={{ fontSize: 11, color: "#8993a6" }}>익힘</span>
+              <span style={{ fontSize: 12, color: "#8993a6" }}>익힘</span>
               <input
                 value={book.learnedCount || 0}
                 onChange={(e) => setLearnedCount(e.target.value)}
                 inputMode="numeric"
                 className="field"
-                style={{ width: 40, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "5px 2px" }}
+                style={{ width: 42, fontSize: 14, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "5px 2px" }}
               />
-              <span style={{ fontSize: 11, color: "#8993a6" }}>번</span>
+              <span style={{ fontSize: 12, color: "#8993a6" }}>번</span>
             </div>
           </div>
         </div>
 
         <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #262c37" }}>
-          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
+          <div style={{ fontSize: 12.5, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
             <input
               value={newQuoteNumber}
@@ -347,7 +347,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
               placeholder="번호"
               inputMode="numeric"
               className="field"
-              style={{ width: 44, flexShrink: 0, fontSize: 15, textAlign: "center", padding: "6px 2px" }}
+              style={{ width: 46, flexShrink: 0, fontSize: 16, textAlign: "center", padding: "6px 2px" }}
             />
             <textarea
               value={newQuoteText}
@@ -356,30 +356,30 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
               placeholder="내용을 입력하거나 붙여넣으세요"
               className="field"
               rows={3}
-              style={{ flex: 1, fontSize: 15, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
+              style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
             />
           </div>
         </div>
 
-        <div style={{ fontSize: 11.5, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
+        <div style={{ fontSize: 12, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
 
         <input
           value={quoteSearchQuery}
           onChange={(e) => setQuoteSearchQuery(e.target.value)}
           placeholder="🔍 주요문 검색 (번호 또는 내용)"
           className="field"
-          style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
+          style={{ marginBottom: 14, fontSize: 15, padding: "8px 10px" }}
         />
 
         {filteredQuotes.map((q) => (
-          <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8, padding: "4px 8px", borderRadius: 8, background: q.id === book.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
+          <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8, padding: "4px 6px", borderRadius: 8, background: q.id === book.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
               <input
                 value={q.number}
                 onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
                 inputMode="numeric"
                 className="field"
-                style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
+                style={{ width: 32, fontSize: 14, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
               />
               <input
                 type="checkbox"
@@ -398,7 +398,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
               }}
               className="field"
               rows={1}
-              style={{ flex: 1, fontSize: 16, color: "#e7eaf0", lineHeight: 1.5, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+              style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.55, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
             />
           </div>
         ))}
