@@ -727,7 +727,7 @@ function SermonListView({ sermons, onOpenSermon, onAddSermon, onDeleteSermon, co
 
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-      <button onClick={onBackToReading} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>← 독서요약집으로</button>
+      <button onClick={onBackToReading} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>← 홈으로</button>
       <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>⛪ 교회설교요약</div>
       <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>
         매주 일요일 날짜가 자동으로 추가돼요(앱을 열 때 그 사이 빠진 주를 채워 넣어요). 필요하면 날짜를 직접 추가할 수도 있어요.
@@ -817,7 +817,7 @@ function App() {
   const [mainView, setMainView] = useState("index"); // 'index' | 'book'
   const [currentBookId, setCurrentBookId] = useState(null);
 
-  const [mainSection, setMainSection] = useState("reading"); // 'reading' | 'sermon'
+  const [mainSection, setMainSection] = useState("home"); // 'home' | 'reading' | 'sermon'
   const [sermons, setSermons] = useState(loadSermons);
   const [sermonView, setSermonView] = useState("list"); // 'list' | 'detail'
   const [currentSermonId, setCurrentSermonId] = useState(null);
@@ -902,6 +902,50 @@ function App() {
     setRevealDeleteBookId(null);
   };
 
+  if (mainSection === "home") {
+    return (
+      <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+        <style>{`
+          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
+          .field:focus { outline:none; border-color:#c9974a; }
+          .iconbtn { background:none; border:none; cursor:pointer; }
+        `}</style>
+        <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
+          <div style={{ fontSize: 54, fontWeight: 800, marginBottom: 4 }}>📚 독서요약집</div>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>아래에서 메뉴를 선택하세요.</div>
+
+          <div
+            onClick={() => { setMainSection("reading"); setMainView("index"); }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", marginBottom: 10, cursor: "pointer" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 30 }}>📖</span>
+              <div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>독서완료</div>
+                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{books.length}권의 책</div>
+              </div>
+            </div>
+            <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
+          </div>
+
+          <div
+            onClick={() => setMainSection("sermon")}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", cursor: "pointer" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 30 }}>⛪</span>
+              <div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>교회설교요약</div>
+                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{sermons.length}개의 주일 설교</div>
+              </div>
+            </div>
+            <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (mainSection === "sermon") {
     return (
       <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
@@ -921,7 +965,7 @@ function App() {
             onCancelDelete={cancelDeleteSermon}
             newSermonDate={newSermonDate}
             onChangeNewSermonDate={setNewSermonDate}
-            onBackToReading={() => setMainSection("reading")}
+            onBackToReading={() => setMainSection("home")}
           />
         )}
         {sermonView === "detail" && currentSermon && (
@@ -946,7 +990,8 @@ function App() {
 
       {mainView === "index" && (
         <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-          <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4 }}>📚 독서요약집</div>
+          <button onClick={() => setMainSection("home")} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>← 홈으로</button>
+          <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4 }}>📖 독서완료</div>
           <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요.</div>
 
           {books.length === 0 && (
@@ -1042,20 +1087,6 @@ function App() {
                 + 추가
               </button>
             </div>
-          </div>
-
-          <div
-            onClick={() => setMainSection("sermon")}
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #3a4150", borderRadius: 12, padding: "14px 16px", marginTop: 22, cursor: "pointer" }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 22 }}>⛪</span>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0" }}>교회설교요약</div>
-                <div style={{ fontSize: 11.5, color: "#8993a6", marginTop: 2 }}>{sermons.length}개의 주일 설교</div>
-              </div>
-            </div>
-            <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
           </div>
         </div>
       )}
