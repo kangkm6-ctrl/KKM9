@@ -171,6 +171,63 @@ function loadSermons() {
   return ensureSundays(list);
 }
 
+// 본문을 눌러 왼쪽으로 당기면 삭제/취소 버튼이 나타나는 스와이프 행.
+// onNavigate가 없으면 탭해도 이동하지 않고(내부 입력칸이 정상적으로 반응), 스와이프로 열고 닫는 것만 동작한다.
+function SwipeRow({ onNavigate, content, actions, actionWidth = 132, gap = 10, borderRadius = 12 }) {
+  const [dragX, setDragX] = useState(0);
+  const [open, setOpen] = useState(false);
+  const info = useRef({ x: 0, y: 0, base: 0, active: null, dragged: false });
+
+  const onTouchStart = (e) => {
+    const t = e.touches[0];
+    info.current = { x: t.clientX, y: t.clientY, base: open ? -actionWidth : 0, active: null, dragged: false };
+  };
+  const onTouchMove = (e) => {
+    const t = e.touches[0];
+    const dx = t.clientX - info.current.x;
+    const dy = t.clientY - info.current.y;
+    if (info.current.active === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      info.current.active = Math.abs(dx) > Math.abs(dy);
+    }
+    if (info.current.active) {
+      info.current.dragged = true;
+      let next = info.current.base + dx;
+      next = Math.max(-actionWidth, Math.min(0, next));
+      setDragX(next);
+    }
+  };
+  const onTouchEnd = () => {
+    if (info.current.active) {
+      const shouldOpen = dragX < -actionWidth / 2;
+      setOpen(shouldOpen);
+      setDragX(shouldOpen ? -actionWidth : 0);
+    }
+  };
+  const close = () => { setOpen(false); setDragX(0); };
+  const handleContentClick = () => {
+    if (info.current.dragged) { info.current.dragged = false; return; }
+    if (open) { close(); return; }
+    if (onNavigate) onNavigate();
+  };
+
+  return (
+    <div style={{ position: "relative", overflow: "hidden", borderRadius, marginBottom: gap }}>
+      <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: actionWidth, display: "flex" }}>
+        {actions(close)}
+      </div>
+      <div
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onClick={handleContentClick}
+        style={{ transform: `translateX(${dragX}px)`, transition: info.current.active ? "none" : "transform 0.2s ease", touchAction: "pan-y", position: "relative", zIndex: 1, cursor: onNavigate ? "pointer" : "default", background: "#12151b" }}
+      >
+        {content}
+      </div>
+    </div>
+  );
+}
+
 function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
@@ -372,33 +429,57 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook }) {
         />
 
         {filteredQuotes.map((q) => (
-          <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8, padding: "4px 6px", borderRadius: 8, background: q.id === book.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
-              <input
-                value={q.number}
-                onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
-                inputMode="numeric"
-                className="field"
-                style={{ width: 32, fontSize: 14, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
-              />
-              <input
-                type="checkbox"
-                checked={q.id === book.bookmarkQuoteId}
-                onChange={() => toggleBookmark(q.id)}
-                style={{ width: 16, height: 16, accentColor: "#c9974a", flexShrink: 0 }}
-              />
-            </div>
-            <textarea
-              ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-              value={q.text}
-              onChange={(e) => {
-                updateQuoteText(q.id, e.target.value);
-                e.target.style.height = "auto";
-                e.target.style.height = e.target.scrollHeight + "px";
-              }}
-              className="field"
-              rows={1}
-              style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.55, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+          <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }}>
+            <SwipeRow
+              onNavigate={() => {}}
+              actionWidth={112}
+              content={
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "4px 6px", borderRadius: 8, background: q.id === book.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                    <input
+                      value={q.number}
+                      onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
+                      inputMode="numeric"
+                      className="field"
+                      style={{ width: 32, fontSize: 14, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
+                    />
+                    <input
+                      type="checkbox"
+                      checked={q.id === book.bookmarkQuoteId}
+                      onChange={() => toggleBookmark(q.id)}
+                      style={{ width: 16, height: 16, accentColor: "#c9974a", flexShrink: 0 }}
+                    />
+                  </div>
+                  <textarea
+                    ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                    value={q.text}
+                    onChange={(e) => {
+                      updateQuoteText(q.id, e.target.value);
+                      e.target.style.height = "auto";
+                      e.target.style.height = e.target.scrollHeight + "px";
+                    }}
+                    className="field"
+                    rows={1}
+                    style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.55, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+                  />
+                </div>
+              }
+              actions={(close) => (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); close(); }}
+                    style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 12 }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); persistQuotes(renumberQuotes(book.quotes.filter((x) => x.id !== q.id))); }}
+                    style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 12 }}
+                  >
+                    삭제
+                  </button>
+                </>
+              )}
             />
           </div>
         ))}
@@ -675,33 +756,57 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
         <div style={{ fontSize: 13, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
 
         {filteredQuotes.map((q) => (
-          <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8, padding: "4px 8px", borderRadius: 8, background: q.id === sermon.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
-              <input
-                value={q.number}
-                onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
-                inputMode="numeric"
-                className="field"
-                style={{ width: 34, fontSize: 16, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
-              />
-              <input
-                type="checkbox"
-                checked={q.id === sermon.bookmarkQuoteId}
-                onChange={() => toggleBookmark(q.id)}
-                style={{ width: 16, height: 16, accentColor: "#c9974a", flexShrink: 0 }}
-              />
-            </div>
-            <textarea
-              ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-              value={q.text}
-              onChange={(e) => {
-                updateQuoteText(q.id, e.target.value);
-                e.target.style.height = "auto";
-                e.target.style.height = e.target.scrollHeight + "px";
-              }}
-              className="field"
-              rows={1}
-              style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.55, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+          <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }}>
+            <SwipeRow
+              onNavigate={() => {}}
+              actionWidth={112}
+              content={
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "4px 8px", borderRadius: 8, background: q.id === sermon.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                    <input
+                      value={q.number}
+                      onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
+                      inputMode="numeric"
+                      className="field"
+                      style={{ width: 34, fontSize: 16, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
+                    />
+                    <input
+                      type="checkbox"
+                      checked={q.id === sermon.bookmarkQuoteId}
+                      onChange={() => toggleBookmark(q.id)}
+                      style={{ width: 16, height: 16, accentColor: "#c9974a", flexShrink: 0 }}
+                    />
+                  </div>
+                  <textarea
+                    ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                    value={q.text}
+                    onChange={(e) => {
+                      updateQuoteText(q.id, e.target.value);
+                      e.target.style.height = "auto";
+                      e.target.style.height = e.target.scrollHeight + "px";
+                    }}
+                    className="field"
+                    rows={1}
+                    style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.55, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+                  />
+                </div>
+              }
+              actions={(close) => (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); close(); }}
+                    style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 12 }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); persistQuotes(renumberQuotes(sermon.quotes.filter((x) => x.id !== q.id))); }}
+                    style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 12 }}
+                  >
+                    삭제
+                  </button>
+                </>
+              )}
             />
           </div>
         ))}
@@ -710,13 +815,8 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions }) {
   );
 }
 
-function SermonListView({ sermons, onOpenSermon, onAddSermon, onDeleteSermon, confirmDeleteId, onRequestDelete, onCancelDelete, newSermonDate, onChangeNewSermonDate, onBackToReading }) {
+function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, onChangeNewSermonDate, onAddSermon, onBackToReading }) {
   const sorted = [...sermons].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const [revealDeleteId, setRevealDeleteId] = useState(null);
-  const toggleReveal = (id, e) => {
-    e.stopPropagation();
-    setRevealDeleteId((cur) => (cur === id ? null : id));
-  };
 
   const fmtDate = (ds) => {
     if (!ds) return ds;
@@ -730,7 +830,7 @@ function SermonListView({ sermons, onOpenSermon, onAddSermon, onDeleteSermon, co
       <button onClick={onBackToReading} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>← 홈으로</button>
       <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>⛪ 교회설교요약</div>
       <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>
-        매주 일요일 날짜가 자동으로 추가돼요(앱을 열 때 그 사이 빠진 주를 채워 넣어요). 필요하면 날짜를 직접 추가할 수도 있어요.
+        매주 일요일 날짜가 자동으로 추가돼요(앱을 열 때 그 사이 빠진 주를 채워 넣어요). 필요하면 날짜를 직접 추가할 수도 있어요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.
       </div>
 
       {sorted.length === 0 && (
@@ -738,55 +838,40 @@ function SermonListView({ sermons, onOpenSermon, onAddSermon, onDeleteSermon, co
       )}
 
       {sorted.map((s) => (
-        <div
+        <SwipeRow
           key={s.id}
-          onClick={() => onOpenSermon(s.id)}
-          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", marginBottom: 10, cursor: "pointer" }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, color: "#c9974a", fontWeight: 700 }}>{fmtDate(s.date)}</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
-              {s.title && s.title.trim() ? s.title : "(제목 없음)"}
+          onNavigate={() => onOpenSermon(s.id)}
+          content={
+            <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: "#c9974a", fontWeight: 700 }}>{fmtDate(s.date)}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
+                  {s.title && s.title.trim() ? s.title : "(제목 없음)"}
+                </div>
+                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
+                  {s.scripture ? `${s.scripture} · ` : ""}{s.preacher || DEFAULT_PREACHER} · 주요문 {s.quotes.length}개
+                </div>
+              </div>
+              <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
             </div>
-            <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
-              {s.scripture ? `${s.scripture} · ` : ""}{s.preacher || DEFAULT_PREACHER} · 주요문 {s.quotes.length}개
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-            {confirmDeleteId === s.id ? (
-              <>
-                <span style={{ fontSize: 11, color: "#e8544b", fontWeight: 700, whiteSpace: "nowrap" }}>삭제할까요?</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDeleteSermon(s.id); setRevealDeleteId(null); }}
-                  className="iconbtn"
-                  style={{ border: "1px solid #e8544b", background: "rgba(232,84,75,0.22)", color: "#e8544b", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
-                >
-                  삭제
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onCancelDelete(); setRevealDeleteId(null); }}
-                  className="iconbtn"
-                  style={{ border: "1px solid #3a4150", background: "transparent", color: "#8993a6", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
-                >
-                  취소
-                </button>
-              </>
-            ) : revealDeleteId === s.id ? (
-              <>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onRequestDelete(s.id); }}
-                  className="iconbtn"
-                  style={{ border: "1px solid #e8544b", background: "rgba(232,84,75,0.12)", color: "#e8544b", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
-                >
-                  🗑 삭제
-                </button>
-                <button onClick={(e) => toggleReveal(s.id, e)} className="iconbtn" style={{ color: "#8993a6", fontSize: 16, padding: "4px 4px" }}>✕</button>
-              </>
-            ) : (
-              <button onClick={(e) => toggleReveal(s.id, e)} className="iconbtn" style={{ color: "#8993a6", fontSize: 20, padding: "4px 8px", letterSpacing: 1 }}>⋯</button>
-            )}
-          </div>
-        </div>
+          }
+          actions={(close) => (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); close(); }}
+                style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 13 }}
+              >
+                취소
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDeleteSermon(s.id); }}
+                style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 13 }}
+              >
+                삭제
+              </button>
+            </>
+          )}
+        />
       ))}
 
       <div style={{ marginTop: 6 }}>
@@ -822,7 +907,6 @@ function App() {
   const [sermonView, setSermonView] = useState("list"); // 'list' | 'detail'
   const [currentSermonId, setCurrentSermonId] = useState(null);
   const [newSermonDate, setNewSermonDate] = useState("");
-  const [confirmDeleteSermonId, setConfirmDeleteSermonId] = useState(null);
 
   useEffect(() => {
     try { localStorage.setItem(BOOKS_KEY, JSON.stringify(books)); } catch (e) {}
@@ -862,11 +946,8 @@ function App() {
     setCurrentSermonId(s.id);
     setSermonView("detail");
   };
-  const requestDeleteSermon = (id) => setConfirmDeleteSermonId(id);
-  const cancelDeleteSermon = () => setConfirmDeleteSermonId(null);
   const deleteSermon = (id) => {
     setSermons((prev) => prev.filter((s) => s.id !== id));
-    setConfirmDeleteSermonId(null);
   };
 
   const [newBookTitle, setNewBookTitle] = useState("");
@@ -880,26 +961,8 @@ function App() {
     setMainView("book");
   };
 
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const [revealDeleteBookId, setRevealDeleteBookId] = useState(null);
-  const toggleRevealDeleteBook = (id, e) => {
-    e.stopPropagation();
-    setRevealDeleteBookId((cur) => (cur === id ? null : id));
-  };
-  const requestDeleteBook = (id, e) => {
-    e.stopPropagation();
-    setConfirmDeleteId(id);
-  };
-  const cancelDeleteBook = (e) => {
-    e.stopPropagation();
-    setConfirmDeleteId(null);
-    setRevealDeleteBookId(null);
-  };
-  const confirmDeleteBook = (id, e) => {
-    e.stopPropagation();
+  const deleteBook = (id) => {
     setBooks((prev) => prev.filter((b) => b.id !== id));
-    setConfirmDeleteId(null);
-    setRevealDeleteBookId(null);
   };
 
   if (mainSection === "home") {
@@ -960,9 +1023,6 @@ function App() {
             onOpenSermon={(id) => { setCurrentSermonId(id); setSermonView("detail"); }}
             onAddSermon={addSermon}
             onDeleteSermon={deleteSermon}
-            confirmDeleteId={confirmDeleteSermonId}
-            onRequestDelete={requestDeleteSermon}
-            onCancelDelete={cancelDeleteSermon}
             newSermonDate={newSermonDate}
             onChangeNewSermonDate={setNewSermonDate}
             onBackToReading={() => setMainSection("home")}
@@ -992,7 +1052,7 @@ function App() {
         <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
           <button onClick={() => setMainSection("home")} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>← 홈으로</button>
           <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4 }}>📖 독서완료</div>
-          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요.</div>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
 
           {books.length === 0 && (
             <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 책이 없어요.</div>
@@ -1008,64 +1068,37 @@ function App() {
               return db.localeCompare(da); // 최근에 읽은 책이 먼저
             })
             .map((b) => (
-            <div
+            <SwipeRow
               key={b.id}
-              onClick={() => { setCurrentBookId(b.id); setMainView("book"); }}
-              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", marginBottom: 10, cursor: "pointer" }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title || "(제목 없음)"}</div>
-                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
-                  주요문 {b.quotes.length}개 · 읽은날짜 {b.readDate || "미설정"} · 익힘 {b.learnedCount || 0}번
+              onNavigate={() => { setCurrentBookId(b.id); setMainView("book"); }}
+              content={
+                <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title || "(제목 없음)"}</div>
+                    <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
+                      주요문 {b.quotes.length}개 · 읽은날짜 {b.readDate || "미설정"} · 익힘 {b.learnedCount || 0}번
+                    </div>
+                  </div>
+                  <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
                 </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                {confirmDeleteId === b.id ? (
-                  <>
-                    <span style={{ fontSize: 11, color: "#e8544b", fontWeight: 700, whiteSpace: "nowrap" }}>삭제할까요?</span>
-                    <button
-                      onClick={(e) => confirmDeleteBook(b.id, e)}
-                      className="iconbtn"
-                      style={{ border: "1px solid #e8544b", background: "rgba(232,84,75,0.22)", color: "#e8544b", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
-                    >
-                      삭제
-                    </button>
-                    <button
-                      onClick={cancelDeleteBook}
-                      className="iconbtn"
-                      style={{ border: "1px solid #3a4150", background: "transparent", color: "#8993a6", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
-                    >
-                      취소
-                    </button>
-                  </>
-                ) : revealDeleteBookId === b.id ? (
-                  <>
-                    <button
-                      onClick={(e) => requestDeleteBook(b.id, e)}
-                      className="iconbtn"
-                      style={{ border: "1px solid #e8544b", background: "rgba(232,84,75,0.12)", color: "#e8544b", fontWeight: 700, fontSize: 12, borderRadius: 10, padding: "6px 10px", whiteSpace: "nowrap" }}
-                    >
-                      🗑 삭제
-                    </button>
-                    <button
-                      onClick={(e) => toggleRevealDeleteBook(b.id, e)}
-                      className="iconbtn"
-                      style={{ color: "#8993a6", fontSize: 16, padding: "4px 4px" }}
-                    >
-                      ✕
-                    </button>
-                  </>
-                ) : (
+              }
+              actions={(close) => (
+                <>
                   <button
-                    onClick={(e) => toggleRevealDeleteBook(b.id, e)}
-                    className="iconbtn"
-                    style={{ color: "#8993a6", fontSize: 20, padding: "4px 8px", letterSpacing: 1 }}
+                    onClick={(e) => { e.stopPropagation(); close(); }}
+                    style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 13 }}
                   >
-                    ⋯
+                    취소
                   </button>
-                )}
-              </div>
-            </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteBook(b.id); }}
+                    style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 13 }}
+                  >
+                    삭제
+                  </button>
+                </>
+              )}
+            />
           ))}
 
           <div style={{ marginTop: 6 }}>
