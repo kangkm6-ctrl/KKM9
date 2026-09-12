@@ -119,6 +119,13 @@ const toDateStr = (d) => {
   const day = pad2(d.getDate());
   return `${y}-${m}-${day}`;
 };
+// "YYYY-MM-DD" 문자열을 로컬 자정 기준 Date로 만든다. new Date("YYYY-MM-DD")는 UTC 자정으로
+// 해석되기 때문에, 한국(UTC+9) 등에서는 mostRecentSunday(로컬 자정 기준)와 비교할 때 최대 하루 어긋나서
+// "오늘이 일요일인데도 생성 안 됨" 같은 버그가 생긴다. 항상 이 함수로 파싱해서 기준을 통일한다.
+const parseLocalDate = (dateStr) => {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
 const mostRecentSunday = (base) => {
   const d = new Date(base);
   d.setHours(0, 0, 0, 0);
@@ -138,22 +145,24 @@ const makeSermon = (dateStr, preacher) => ({
 
 // 마지막으로 만들어둔 설교 날짜 다음 주부터, 오늘이 속한 주의 일요일까지 빠진 일요일을 채워 넣는다.
 // (웹앱은 앱이 닫혀있는 동안 정확히 "일요일 오전 5시"에 실행될 수는 없어서, 다음에 앱을 열 때 놓친 주를 한번에 보충한다.)
-const ensureSundays = (list) => {
+// deletedDates에 들어있는 날짜는 사용자가 수동으로 지운 것이므로 다시 자동 생성하지 않는다.
+const ensureSundays = (list, deletedDates) => {
+  const deleted = deletedDates || new Set();
   const latestSunday = mostRecentSunday(new Date());
   const next = [...list];
   const existingDates = new Set(next.map((s) => s.date));
   if (next.length === 0) {
-    const s = makeSermon(toDateStr(latestSunday));
-    next.push(s);
+    const seedDate = toDateStr(latestSunday);
+    if (!deleted.has(seedDate)) next.push(makeSermon(seedDate));
     return next;
   }
   const lastPreacher = next.reduce((latest, s) => (s.date > latest.date ? s : latest), next[0]).preacher;
   let maxDateStr = next.reduce((m, s) => (s.date > m ? s.date : m), next[0].date);
-  let cursor = new Date(maxDateStr);
+  let cursor = parseLocalDate(maxDateStr);
   cursor.setDate(cursor.getDate() + 7);
   while (cursor <= latestSunday) {
     const ds = toDateStr(cursor);
-    if (!existingDates.has(ds)) {
+    if (!existingDates.has(ds) && !deleted.has(ds)) {
       next.push(makeSermon(ds, lastPreacher));
       existingDates.add(ds);
     }
@@ -162,13 +171,19 @@ const ensureSundays = (list) => {
   return next;
 };
 
-function loadSermons() {
-  let list = [];
+const DELETED_SERMON_DATES_KEY = "reading-summary-deleted-sermon-dates-v1";
+function loadDeletedSermonDates() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DELETED_SERMON_DATES_KEY));
+    return Array.isArray(saved) ? saved : [];
+  } catch (e) { return []; }
+}
+
+function loadRawSermons() {
   try {
     const saved = JSON.parse(localStorage.getItem(SERMONS_KEY));
-    if (Array.isArray(saved)) list = saved;
-  } catch (e) { list = []; }
-  return ensureSundays(list);
+    return Array.isArray(saved) ? saved : [];
+  } catch (e) { return []; }
 }
 
 // 본문을 눌러 왼쪽으로 당기면 삭제/취소 버튼이 나타나는 스와이프 행.
@@ -834,11 +849,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
 }
 
 function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, onChangeNewSermonDate, onAddSermon, onBackToReading, undo, undoCount }) {
-  const sorted = [...sermons].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const sorted = [...sermons].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // 최근 날짜가 먼저
 
   const fmtDate = (ds) => {
     if (!ds) return ds;
-    const d = new Date(ds);
+    const d = parseLocalDate(ds);
     const days = ["일", "월", "화", "수", "목", "금", "토"];
     return `${ds} (${days[d.getDay()]})`;
   };
@@ -931,7 +946,8 @@ function App() {
   const [currentBookId, setCurrentBookId] = useState(null);
 
   const [mainSection, setMainSection] = useState("home"); // 'home' | 'reading' | 'sermon'
-  const [sermons, setSermons] = useState(loadSermons);
+  const [sermons, setSermons] = useState(() => ensureSundays(loadRawSermons(), new Set(loadDeletedSermonDates())));
+  const [deletedSermonDates, setDeletedSermonDates] = useState(loadDeletedSermonDates);
   const [sermonView, setSermonView] = useState("list"); // 'list' | 'detail'
   const [currentSermonId, setCurrentSermonId] = useState(null);
   const [newSermonDate, setNewSermonDate] = useState("");
@@ -944,13 +960,21 @@ function App() {
     try { localStorage.setItem(SERMONS_KEY, JSON.stringify(sermons)); } catch (e) {}
   }, [sermons]);
 
+  useEffect(() => {
+    try { localStorage.setItem(DELETED_SERMON_DATES_KEY, JSON.stringify(deletedSermonDates)); } catch (e) {}
+  }, [deletedSermonDates]);
+
   // 실수로 삭제했을 때 되돌리기 위한 실행취소 스택 (최근 5단계).
   const undoStackRef = useRef([]);
   const [undoCount, setUndoCount] = useState(0);
   const pushUndoSnapshot = () => {
     undoStackRef.current = [
       ...undoStackRef.current,
-      { books: JSON.parse(JSON.stringify(books)), sermons: JSON.parse(JSON.stringify(sermons)) },
+      {
+        books: JSON.parse(JSON.stringify(books)),
+        sermons: JSON.parse(JSON.stringify(sermons)),
+        deletedSermonDates: [...deletedSermonDates],
+      },
     ].slice(-5);
     setUndoCount(undoStackRef.current.length);
   };
@@ -961,6 +985,7 @@ function App() {
     undoStackRef.current = stack.slice(0, -1);
     setBooks(last.books);
     setSermons(last.sermons);
+    setDeletedSermonDates(last.deletedSermonDates || []);
     setUndoCount(undoStackRef.current.length);
   };
 
@@ -990,12 +1015,17 @@ function App() {
       : DEFAULT_PREACHER;
     const s = makeSermon(newSermonDate, lastPreacher);
     setSermons((prev) => [...prev, s]);
+    setDeletedSermonDates((prev) => prev.filter((d) => d !== newSermonDate));
     setNewSermonDate("");
     setCurrentSermonId(s.id);
     setSermonView("detail");
   };
   const deleteSermon = (id) => {
     pushUndoSnapshot();
+    const target = sermons.find((s) => s.id === id);
+    if (target) {
+      setDeletedSermonDates((prev) => (prev.includes(target.date) ? prev : [...prev, target.date]));
+    }
     setSermons((prev) => prev.filter((s) => s.id !== id));
   };
 
