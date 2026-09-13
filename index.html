@@ -195,9 +195,14 @@ function SwipeRow({ onNavigate, content, actions, actionWidth = 132, gap = 10, b
 
   const onTouchStart = (e) => {
     const t = e.touches[0];
-    info.current = { x: t.clientX, y: t.clientY, base: open ? -actionWidth : 0, active: null, dragged: false };
+    const tag = e.target && e.target.tagName;
+    const isEditable = tag === "INPUT" || tag === "TEXTAREA";
+    // 텍스트를 편집/선택하려고 왼쪽으로 드래그하는 것까지 스와이프-삭제로 인식하지 않도록,
+    // 입력칸/글자칸 안에서 시작된 터치는 스와이프 판정 자체를 하지 않는다.
+    info.current = { x: t.clientX, y: t.clientY, base: open ? -actionWidth : 0, active: isEditable ? false : null, dragged: false };
   };
   const onTouchMove = (e) => {
+    if (info.current.active === false) return;
     const t = e.touches[0];
     const dx = t.clientX - info.current.x;
     const dy = t.clientY - info.current.y;
@@ -949,6 +954,17 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
   );
 }
 
+// 5분간 움직임이 없을 때 화면을 덮는 오버레이. 탭하면 다시 켜진다.
+function ScreenOffOverlay({ onWake }) {
+  return (
+    <div
+      onClick={onWake}
+      onTouchStart={onWake}
+      style={{ position: "fixed", inset: 0, background: "#000", zIndex: 9999 }}
+    />
+  );
+}
+
 function App() {
   const [books, setBooks] = useState(loadBooks);
   const [mainView, setMainView] = useState("index"); // 'index' | 'book'
@@ -997,6 +1013,27 @@ function App() {
     setDeletedSermonDates(last.deletedSermonDates || []);
     setUndoCount(undoStackRef.current.length);
   };
+
+  // 화면을 열어두고 5분간 움직임(터치/입력 등)이 없으면 화면을 어둡게 꺼서 보여준다.
+  // (웹앱은 기기의 실제 화면 밝기/잠금을 직접 끌 수는 없어서, 앱 내용을 검게 가려 "꺼진 것처럼" 만든다.
+  //  아무 곳이나 다시 터치하면 켜진다.)
+  const [screenOff, setScreenOff] = useState(false);
+  useEffect(() => {
+    const IDLE_MS = 5 * 60 * 1000;
+    let timer = null;
+    const resetTimer = () => {
+      setScreenOff(false);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setScreenOff(true), IDLE_MS);
+    };
+    const events = ["touchstart", "touchmove", "mousedown", "mousemove", "keydown", "scroll"];
+    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
+    resetTimer();
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   const currentBook = books.find((b) => b.id === currentBookId) || null;
   const currentSermon = sermons.find((s) => s.id === currentSermonId) || null;
@@ -1057,6 +1094,7 @@ function App() {
   if (mainSection === "home") {
     return (
       <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+        {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
         <style>{`
           .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
           .field:focus { outline:none; border-color:#c9974a; }
@@ -1101,6 +1139,7 @@ function App() {
   if (mainSection === "sermon") {
     return (
       <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+        {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
         <style>{`
           .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
           .field:focus { outline:none; border-color:#c9974a; }
@@ -1136,6 +1175,7 @@ function App() {
 
   return (
     <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+      {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
       <style>{`
         .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
         .field:focus { outline:none; border-color:#c9974a; }
