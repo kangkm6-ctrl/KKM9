@@ -191,15 +191,18 @@ function loadRawSermons() {
 function SwipeRow({ onNavigate, content, actions, actionWidth = 132, gap = 10, borderRadius = 12 }) {
   const [dragX, setDragX] = useState(0);
   const [open, setOpen] = useState(false);
-  const info = useRef({ x: 0, y: 0, base: 0, active: null, dragged: false });
+  const info = useRef({ x: 0, y: 0, base: 0, active: null, dragged: false, lastX: 0 });
 
   const onTouchStart = (e) => {
     const t = e.touches[0];
     const tag = e.target && e.target.tagName;
     const isEditable = tag === "INPUT" || tag === "TEXTAREA";
-    // 텍스트를 편집/선택하려고 왼쪽으로 드래그하는 것까지 스와이프-삭제로 인식하지 않도록,
-    // 입력칸/글자칸 안에서 시작된 터치는 스와이프 판정 자체를 하지 않는다.
-    info.current = { x: t.clientX, y: t.clientY, base: open ? -actionWidth : 0, active: isEditable ? false : null, dragged: false };
+    // 이미 포커스가 들어가 있어 "수정/선택 중"인 입력칸에서 시작된 드래그만 스와이프-삭제로
+    // 인식하지 않는다(글자 선택/커서 이동 보호). 아직 선택(포커스)되지 않은 칸이면 평소처럼
+    // 왼쪽으로 밀어서 삭제/취소를 열 수 있게 스와이프 판정을 그대로 살려둔다.
+    const isBeingEdited = isEditable && document.activeElement === e.target;
+    const startBase = open ? -actionWidth : 0;
+    info.current = { x: t.clientX, y: t.clientY, base: startBase, active: isBeingEdited ? false : null, dragged: false, lastX: startBase };
   };
   const onTouchMove = (e) => {
     if (info.current.active === false) return;
@@ -213,12 +216,15 @@ function SwipeRow({ onNavigate, content, actions, actionWidth = 132, gap = 10, b
       info.current.dragged = true;
       let next = info.current.base + dx;
       next = Math.max(-actionWidth, Math.min(0, next));
+      info.current.lastX = next;
       setDragX(next);
     }
   };
   const onTouchEnd = () => {
     if (info.current.active) {
-      const shouldOpen = dragX < -actionWidth / 2;
+      // React state(dragX)는 마지막 touchmove 이후 리렌더가 아직 안 끝났을 수 있어 값이 늦게
+      // 반영될 수 있으므로, ref에 즉시 기록해둔 lastX를 기준으로 판정한다.
+      const shouldOpen = info.current.lastX < -actionWidth / 2;
       setOpen(shouldOpen);
       setDragX(shouldOpen ? -actionWidth : 0);
     }
