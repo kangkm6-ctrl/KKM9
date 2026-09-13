@@ -912,7 +912,7 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
                   {s.title && s.title.trim() ? s.title : "(제목 없음)"}
                 </div>
                 <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
-                  {s.scripture ? `${s.scripture} · ` : ""}{s.preacher || DEFAULT_PREACHER} · 주요문 {s.quotes.length}개
+                  {s.scripture ? `${s.scripture} · ` : ""}{s.preacher || DEFAULT_PREACHER} · 주요문 {s.quotes.length}개 · 익힘 {s.learnedCount || 0}번
                 </div>
               </div>
               <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
