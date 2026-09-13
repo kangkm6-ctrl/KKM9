@@ -885,7 +885,7 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
           ↺ 실행취소{undoCount > 0 ? ` (${undoCount})` : ""}
         </button>
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>⛪ 교회설교요약</div>
+      <div style={{ fontSize: 33, fontWeight: 800, marginBottom: 4 }}>⛪ 교회설교요약</div>
       <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>
         매주 일요일 날짜가 자동으로 추가돼요(앱을 열 때 그 사이 빠진 주를 채워 넣어요). 필요하면 날짜를 직접 추가할 수도 있어요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.
       </div>
@@ -902,7 +902,7 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
             <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, color: "#c9974a", fontWeight: 700 }}>{fmtDate(s.date)}</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
+                <div style={{ fontSize: 19, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
                   {s.title && s.title.trim() ? s.title : "(제목 없음)"}
                 </div>
                 <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
@@ -1195,7 +1195,7 @@ function App() {
               ↺ 실행취소{undoCount > 0 ? ` (${undoCount})` : ""}
             </button>
           </div>
-          <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4 }}>📖 독서완료</div>
+          <div style={{ fontSize: 41, fontWeight: 800, marginBottom: 4 }}>📖 독서완료</div>
           <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
 
           {books.length === 0 && (
@@ -1218,7 +1218,7 @@ function App() {
               content={
                 <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title || "(제목 없음)"}</div>
+                    <div style={{ fontSize: 19, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title || "(제목 없음)"}</div>
                     <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
                       주요문 {b.quotes.length}개 · 읽은날짜 {b.readDate || "미설정"} · 익힘 {b.learnedCount || 0}번
                     </div>
