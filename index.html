@@ -385,7 +385,12 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
           <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImportFile} style={{ display: "none" }} />
           <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
           <button onClick={exportToExcel} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
-          <button onClick={jumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📍 책갈피로</button>
+          <button onClick={jumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" />
+            </svg>
+            책갈피로
+          </button>
           <button
             onClick={undo}
             disabled={undoCount === 0}
@@ -463,13 +468,30 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
           style={{ marginBottom: 14, fontSize: 15, padding: "8px 10px" }}
         />
 
-        {filteredQuotes.map((q) => (
+        {filteredQuotes.map((q) => {
+          const isBookmarked = q.id === book.bookmarkQuoteId;
+          return (
           <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }}>
             <SwipeRow
               onNavigate={() => {}}
               actionWidth={112}
               content={
-                <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "4px 6px", borderRadius: 8, background: q.id === book.bookmarkQuoteId ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box" }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "4px 6px", borderRadius: 10, background: isBookmarked ? "rgba(201,151,74,0.1)" : "transparent", boxSizing: "border-box", position: "relative" }}>
+                  {isBookmarked && (
+                    <svg style={{ position: "absolute", inset: 0, pointerEvents: "none" }} width="100%" height="100%">
+                      <defs>
+                        <linearGradient id={`bmGrad-${q.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#c9974a" />
+                          <stop offset="55%" stopColor="#c9974a" />
+                          <stop offset="64%" stopColor="#2a2a28" />
+                          <stop offset="78%" stopColor="#5a5a5e" />
+                          <stop offset="90%" stopColor="#c0392b" />
+                          <stop offset="100%" stopColor="#c0392b" />
+                        </linearGradient>
+                      </defs>
+                      <rect x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" rx="9" ry="9" fill="none" stroke={`url(#bmGrad-${q.id})`} strokeWidth="2" />
+                    </svg>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
                     <input
                       value={q.number}
@@ -478,12 +500,15 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                       className="field"
                       style={{ width: 32, fontSize: 14, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
                     />
-                    <input
-                      type="checkbox"
-                      checked={q.id === book.bookmarkQuoteId}
-                      onChange={() => toggleBookmark(q.id)}
-                      style={{ width: 16, height: 16, accentColor: "#c9974a", flexShrink: 0 }}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => toggleBookmark(q.id)}
+                      style={{ width: 22, height: 22, border: "none", background: "none", padding: 0, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      <svg width="15" height="19" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M1 1h14v18l-7-5-7 5V1z" fill={isBookmarked ? "#c9974a" : "#3a4150"} stroke={isBookmarked ? "#c9974a" : "#5a6274"} strokeWidth="1" strokeLinejoin="round" />
+                      </svg>
+                    </button>
                   </div>
                   <textarea
                     ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
@@ -517,7 +542,8 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
               )}
             />
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
