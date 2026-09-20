@@ -944,7 +944,14 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
 }
 
 function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, onChangeNewSermonDate, onAddSermon, onBackToReading, undo, undoCount, onImport, onExport, fileInputRef, rowRefs, bookmarkedId, onToggleBookmark, onJumpToBookmark }) {
-  const sorted = [...sermons].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // 최근 날짜가 먼저
+  const [searchQuery, setSearchQuery] = useState("");
+  const sorted = [...sermons]
+    .filter((s) => {
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return (s.title || "").toLowerCase().includes(q) || (s.scripture || "").toLowerCase().includes(q) || s.quotes.some((qq) => qq.text.toLowerCase().includes(q));
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // 최근 날짜가 먼저
 
   const fmtDate = (ds) => {
     if (!ds) return ds;
@@ -954,31 +961,40 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
   };
 
   return (
-    <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+    <div>
+    <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 10px", position: "sticky", top: 0, zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
         <button onClick={onBackToReading} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13 }}>← 홈으로</button>
-        <button
-          onClick={undo}
-          disabled={undoCount === 0}
-          className="iconbtn"
-          style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
-        >
-          ↺ 실행취소{undoCount > 0 ? ` (${undoCount})` : ""}
-        </button>
-      </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={onImport} style={{ display: "none" }} />
-        <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
-        <button onClick={onExport} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
-        <button onClick={onJumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
-          책갈피로
-        </button>
-      </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={onImport} style={{ display: "none" }} />
+          <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
+          <button onClick={onExport} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
+          <button onClick={onJumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
+            책갈피로
+          </button>
+          <button
+            onClick={undo}
+            disabled={undoCount === 0}
+            className="iconbtn"
+            style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
+          >
+            ↺{undoCount > 0 ? ` ${undoCount}` : ""}
+          </button>
+        </div>
+    </div>
+    <div style={{ padding: "0 16px 20px" }}>
       <div style={{ fontSize: 33, fontWeight: 800, marginBottom: 4 }}>⛪ 교회설교요약</div>
-      <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>
+      <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>
         매주 일요일 날짜가 자동으로 추가돼요(앱을 열 때 그 사이 빠진 주를 채워 넣어요). 필요하면 날짜를 직접 추가할 수도 있어요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.
       </div>
+
+      <input
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="🔍 주요문 검색 (제목/성경/내용)"
+        className="field"
+        style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
+      />
 
       {sorted.length === 0 && (
         <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 설교가 없어요.</div>
@@ -1051,6 +1067,7 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
           </button>
         </div>
       </div>
+    </div>
     </div>
   );
 }
@@ -1278,6 +1295,7 @@ function App() {
   };
 
   const [newBookTitle, setNewBookTitle] = useState("");
+  const [bookListSearchQuery, setBookListSearchQuery] = useState("");
   const addBook = () => {
     const trimmed = newBookTitle.trim();
     if (!trimmed) return;
@@ -1294,6 +1312,7 @@ function App() {
   };
 
   const [newQuoteSetTitle, setNewQuoteSetTitle] = useState("");
+  const [quoteSetListSearchQuery, setQuoteSetListSearchQuery] = useState("");
   const addQuoteSet = () => {
     const trimmed = newQuoteSetTitle.trim();
     if (!trimmed) return;
@@ -1423,35 +1442,49 @@ function App() {
         `}</style>
 
         {quoteSetView === "index" && (
-          <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div>
+          <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 10px", position: "sticky", top: 0, zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
               <button onClick={() => setMainSection("home")} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13 }}>← 홈으로</button>
-              <button
-                onClick={undo}
-                disabled={undoCount === 0}
-                className="iconbtn"
-                style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
-              >
-                ↺ 실행취소{undoCount > 0 ? ` (${undoCount})` : ""}
-              </button>
-            </div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-              <input type="file" accept=".xlsx,.xls" ref={quoteSetListFileInputRef} onChange={importQuoteSetList} style={{ display: "none" }} />
-              <button onClick={() => quoteSetListFileInputRef.current && quoteSetListFileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
-              <button onClick={exportQuoteSetList} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
-              <button onClick={jumpToBookmarkedQuoteSet} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
-                책갈피로
-              </button>
-            </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <input type="file" accept=".xlsx,.xls" ref={quoteSetListFileInputRef} onChange={importQuoteSetList} style={{ display: "none" }} />
+                <button onClick={() => quoteSetListFileInputRef.current && quoteSetListFileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
+                <button onClick={exportQuoteSetList} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
+                <button onClick={jumpToBookmarkedQuoteSet} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
+                  책갈피로
+                </button>
+                <button
+                  onClick={undo}
+                  disabled={undoCount === 0}
+                  className="iconbtn"
+                  style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
+                >
+                  ↺{undoCount > 0 ? ` ${undoCount}` : ""}
+                </button>
+              </div>
+          </div>
+          <div style={{ padding: "0 16px 20px" }}>
             <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4 }}>{QUOTES_ICON} 명언</div>
-            <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>제목을 눌러 주요문을 보고, 아래에서 새 명언 모음을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
+            <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>제목을 눌러 주요문을 보고, 아래에서 새 명언 모음을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
+
+            <input
+              value={quoteSetListSearchQuery}
+              onChange={(e) => setQuoteSetListSearchQuery(e.target.value)}
+              placeholder="🔍 주요문 검색 (제목 또는 내용)"
+              className="field"
+              style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
+            />
 
             {quoteSets.length === 0 && (
               <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 명언이 없어요.</div>
             )}
 
             {[...quoteSets]
+              .filter((b) => {
+                const q = quoteSetListSearchQuery.trim().toLowerCase();
+                if (!q) return true;
+                return (b.title || "").toLowerCase().includes(q) || b.quotes.some((qq) => qq.text.toLowerCase().includes(q));
+              })
               .sort((a, b) => {
                 const da = a.readDate || "";
                 const db = b.readDate || "";
@@ -1526,6 +1559,7 @@ function App() {
               </div>
             </div>
           </div>
+          </div>
         )}
 
         {quoteSetView === "book" && currentQuoteSet && (
@@ -1553,35 +1587,49 @@ function App() {
       `}</style>
 
       {mainView === "index" && (
-        <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div>
+          <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 10px", position: "sticky", top: 0, zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
             <button onClick={() => setMainSection("home")} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13 }}>← 홈으로</button>
-            <button
-              onClick={undo}
-              disabled={undoCount === 0}
-              className="iconbtn"
-              style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
-            >
-              ↺ 실행취소{undoCount > 0 ? ` (${undoCount})` : ""}
-            </button>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <input type="file" accept=".xlsx,.xls" ref={bookListFileInputRef} onChange={importBookList} style={{ display: "none" }} />
+              <button onClick={() => bookListFileInputRef.current && bookListFileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
+              <button onClick={exportBookList} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
+              <button onClick={jumpToBookmarkedBook} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
+                책갈피로
+              </button>
+              <button
+                onClick={undo}
+                disabled={undoCount === 0}
+                className="iconbtn"
+                style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
+              >
+                ↺{undoCount > 0 ? ` ${undoCount}` : ""}
+              </button>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-            <input type="file" accept=".xlsx,.xls" ref={bookListFileInputRef} onChange={importBookList} style={{ display: "none" }} />
-            <button onClick={() => bookListFileInputRef.current && bookListFileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
-            <button onClick={exportBookList} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
-            <button onClick={jumpToBookmarkedBook} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
-              책갈피로
-            </button>
-          </div>
+          <div style={{ padding: "0 16px 20px" }}>
           <div style={{ fontSize: 41, fontWeight: 800, marginBottom: 4 }}>📖 독서완료</div>
-          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
+
+          <input
+            value={bookListSearchQuery}
+            onChange={(e) => setBookListSearchQuery(e.target.value)}
+            placeholder="🔍 주요문 검색 (책 제목 또는 내용)"
+            className="field"
+            style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
+          />
 
           {books.length === 0 && (
             <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 책이 없어요.</div>
           )}
 
           {[...books]
+            .filter((b) => {
+              const q = bookListSearchQuery.trim().toLowerCase();
+              if (!q) return true;
+              return (b.title || "").toLowerCase().includes(q) || b.quotes.some((qq) => qq.text.toLowerCase().includes(q));
+            })
             .sort((a, b) => {
               const da = a.readDate || "";
               const db = b.readDate || "";
@@ -1654,6 +1702,7 @@ function App() {
                 + 추가
               </button>
             </div>
+          </div>
           </div>
         </div>
       )}
