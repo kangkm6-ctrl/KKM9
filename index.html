@@ -83,6 +83,45 @@ const buildQuotesWorkbook = (title, quotes) => {
   return wb;
 };
 
+// 목록 전체(책 여러 권/명언 여러 개/설교 여러 개)를 한 파일로 내보낼 때, 항목마다 시트를 하나씩 만든다.
+const buildMultiItemWorkbook = (items) => {
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set();
+  items.forEach((item, idx) => {
+    let name = sanitizeFileName(item.title || `항목${idx + 1}`).slice(0, 28) || `항목${idx + 1}`;
+    let finalName = name;
+    let n = 2;
+    while (usedNames.has(finalName)) { finalName = `${name}${n}`.slice(0, 31); n++; }
+    usedNames.add(finalName);
+    const rows = [...item.quotes]
+      .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
+      .map((q) => ({ "번호": q.number, "주요문": q.text }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ "안내": "저장된 주요문 없음" }]), finalName);
+  });
+  return wb;
+};
+
+// 위 다중 시트 파일을 다시 읽어서, 시트 하나당 항목 하나씩(제목=시트 이름) 만들어 돌려준다.
+const parseMultiItemWorkbook = (arrayBuffer, makeItem) => {
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  return wb.SheetNames.map((sheetName) => {
+    const sheet = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    const quotes = rows
+      .map((row) => {
+        const rawText = String(row["주요문"] ?? row["명언"] ?? row["내용"] ?? Object.values(row)[1] ?? "").trim();
+        const { leadingNumber, text } = splitLeadingNumber(rawText);
+        const numberRaw = row["번호"] ?? Object.values(row)[0];
+        const number = num(numberRaw) || leadingNumber || 0;
+        return { id: genId(), number, text };
+      })
+      .filter((q) => q.text)
+      .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
+      .map((q, idx) => ({ ...q, number: idx + 1 }));
+    return makeItem(sheetName, quotes);
+  }).filter((item) => item.quotes.length > 0);
+};
+
 const BOOKS_KEY = "reading-summary-books-v2";
 
 const seedBooks = [
@@ -108,6 +147,16 @@ function loadBooks() {
     return Array.isArray(saved) && saved.length > 0 ? saved : seedBooks;
   } catch (e) { return seedBooks; }
 }
+
+// ---- 명언 (독서완료와 같은 형식의 별도 모음) ----
+const QUOTESETS_KEY = "reading-summary-quotesets-v1";
+function loadQuoteSets() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(QUOTESETS_KEY));
+    return Array.isArray(saved) ? saved : [];
+  } catch (e) { return []; }
+}
+const QUOTES_ICON = "📜";
 
 // ---- 교회설교요약 ----
 const SERMONS_KEY = "reading-summary-sermons-v1";
@@ -894,7 +943,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   );
 }
 
-function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, onChangeNewSermonDate, onAddSermon, onBackToReading, undo, undoCount }) {
+function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, onChangeNewSermonDate, onAddSermon, onBackToReading, undo, undoCount, onImport, onExport, fileInputRef, rowRefs, bookmarkedId, onToggleBookmark, onJumpToBookmark }) {
   const sorted = [...sermons].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // 최근 날짜가 먼저
 
   const fmtDate = (ds) => {
@@ -906,7 +955,7 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
 
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <button onClick={onBackToReading} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13 }}>← 홈으로</button>
         <button
           onClick={undo}
@@ -915,6 +964,15 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
           style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
         >
           ↺ 실행취소{undoCount > 0 ? ` (${undoCount})` : ""}
+        </button>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={onImport} style={{ display: "none" }} />
+        <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
+        <button onClick={onExport} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
+        <button onClick={onJumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
+          책갈피로
         </button>
       </div>
       <div style={{ fontSize: 33, fontWeight: 800, marginBottom: 4 }}>⛪ 교회설교요약</div>
@@ -926,41 +984,52 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
         <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 설교가 없어요.</div>
       )}
 
-      {sorted.map((s) => (
-        <SwipeRow
-          key={s.id}
-          onNavigate={() => onOpenSermon(s.id)}
-          content={
-            <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, color: "#c9974a", fontWeight: 700 }}>{fmtDate(s.date)}</div>
-                <div style={{ fontSize: 19, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
-                  {s.title && s.title.trim() ? s.title : "(제목 없음)"}
+      {sorted.map((s, idx) => (
+        <div key={s.id} ref={(el) => { if (el) rowRefs.current[s.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0, paddingTop: 2 }}>
+            <div className="field" style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}>{idx + 1}</div>
+            <button type="button" onClick={() => onToggleBookmark(s.id)} style={{ width: 22, height: 22, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="15" height="19" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1 1h14v18l-7-5-7 5V1z" fill={bookmarkedId === s.id ? "#c9974a" : "#3a4150"} stroke={bookmarkedId === s.id ? "#c9974a" : "#5a6274"} strokeWidth="1" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <SwipeRow
+              onNavigate={() => onOpenSermon(s.id)}
+              content={
+                <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: "#c9974a", fontWeight: 700 }}>{fmtDate(s.date)}</div>
+                    <div style={{ fontSize: 19, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
+                      {s.title && s.title.trim() ? s.title : "(제목 없음)"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
+                      {s.scripture ? `${s.scripture} · ` : ""}{s.preacher || DEFAULT_PREACHER} · 주요문 {s.quotes.length}개 · 익힘 {s.learnedCount || 0}번
+                    </div>
+                  </div>
+                  <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
                 </div>
-                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
-                  {s.scripture ? `${s.scripture} · ` : ""}{s.preacher || DEFAULT_PREACHER} · 주요문 {s.quotes.length}개 · 익힘 {s.learnedCount || 0}번
-                </div>
-              </div>
-              <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
-            </div>
-          }
-          actions={(close) => (
-            <>
-              <button
-                onClick={(e) => { e.stopPropagation(); close(); }}
-                style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 13 }}
-              >
-                취소
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDeleteSermon(s.id); }}
-                style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 13 }}
-              >
-                삭제
-              </button>
-            </>
-          )}
-        />
+              }
+              actions={(close) => (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); close(); }}
+                    style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 13 }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDeleteSermon(s.id); }}
+                    style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 13 }}
+                  >
+                    삭제
+                  </button>
+                </>
+              )}
+            />
+          </div>
+        </div>
       ))}
 
       <div style={{ marginTop: 6 }}>
@@ -1002,16 +1071,106 @@ function App() {
   const [mainView, setMainView] = useState("index"); // 'index' | 'book'
   const [currentBookId, setCurrentBookId] = useState(null);
 
-  const [mainSection, setMainSection] = useState("home"); // 'home' | 'reading' | 'sermon'
+  const [quoteSets, setQuoteSets] = useState(loadQuoteSets);
+  const [quoteSetView, setQuoteSetView] = useState("index"); // 'index' | 'book'
+  const [currentQuoteSetId, setCurrentQuoteSetId] = useState(null);
+
+  const [mainSection, setMainSection] = useState("home"); // 'home' | 'reading' | 'sermon' | 'quotes'
   const [sermons, setSermons] = useState(() => ensureSundays(loadRawSermons(), new Set(loadDeletedSermonDates())));
   const [deletedSermonDates, setDeletedSermonDates] = useState(loadDeletedSermonDates);
   const [sermonView, setSermonView] = useState("list"); // 'list' | 'detail'
   const [currentSermonId, setCurrentSermonId] = useState(null);
   const [newSermonDate, setNewSermonDate] = useState("");
 
+  // 목록(책/명언/설교) 화면에서 "이 항목이 책갈피"로 지정된 항목 — 화면마다 하나씩만.
+  const [bookmarkedBookId, setBookmarkedBookId] = useState(() => { try { return localStorage.getItem("reading-summary-bm-book") || null; } catch (e) { return null; } });
+  const [bookmarkedQuoteSetId, setBookmarkedQuoteSetId] = useState(() => { try { return localStorage.getItem("reading-summary-bm-quoteset") || null; } catch (e) { return null; } });
+  const [bookmarkedSermonId, setBookmarkedSermonId] = useState(() => { try { return localStorage.getItem("reading-summary-bm-sermon") || null; } catch (e) { return null; } });
+  useEffect(() => { try { bookmarkedBookId ? localStorage.setItem("reading-summary-bm-book", bookmarkedBookId) : localStorage.removeItem("reading-summary-bm-book"); } catch (e) {} }, [bookmarkedBookId]);
+  useEffect(() => { try { bookmarkedQuoteSetId ? localStorage.setItem("reading-summary-bm-quoteset", bookmarkedQuoteSetId) : localStorage.removeItem("reading-summary-bm-quoteset"); } catch (e) {} }, [bookmarkedQuoteSetId]);
+  useEffect(() => { try { bookmarkedSermonId ? localStorage.setItem("reading-summary-bm-sermon", bookmarkedSermonId) : localStorage.removeItem("reading-summary-bm-sermon"); } catch (e) {} }, [bookmarkedSermonId]);
+  const toggleBookmarkedBook = (id) => setBookmarkedBookId((cur) => (cur === id ? null : id));
+  const toggleBookmarkedQuoteSet = (id) => setBookmarkedQuoteSetId((cur) => (cur === id ? null : id));
+  const toggleBookmarkedSermon = (id) => setBookmarkedSermonId((cur) => (cur === id ? null : id));
+  const bookListRowRefs = useRef({});
+  const quoteSetListRowRefs = useRef({});
+  const sermonListRowRefs = useRef({});
+  const jumpToBookmarkedBook = () => { const n = bookmarkedBookId && bookListRowRefs.current[bookmarkedBookId]; if (n) n.scrollIntoView({ behavior: "smooth", block: "center" }); };
+  const jumpToBookmarkedQuoteSet = () => { const n = bookmarkedQuoteSetId && quoteSetListRowRefs.current[bookmarkedQuoteSetId]; if (n) n.scrollIntoView({ behavior: "smooth", block: "center" }); };
+  const jumpToBookmarkedSermon = () => { const n = bookmarkedSermonId && sermonListRowRefs.current[bookmarkedSermonId]; if (n) n.scrollIntoView({ behavior: "smooth", block: "center" }); };
+
+  // 목록 전체를 한 파일로 내려받기/가져오기 (항목마다 시트 하나씩).
+  const [bookListFileInputRef, quoteSetListFileInputRef, sermonListFileInputRef] = [useRef(null), useRef(null), useRef(null)];
+  const exportBookList = () => XLSX.writeFile(buildMultiItemWorkbook(books), buildFileName("독서완료_전체"));
+  const exportQuoteSetList = () => XLSX.writeFile(buildMultiItemWorkbook(quoteSets), buildFileName("명언_전체"));
+  const exportSermonList = () => XLSX.writeFile(buildMultiItemWorkbook(sermons.map((s) => ({ title: s.title || s.date, quotes: s.quotes }))), buildFileName("교회설교요약_전체"));
+  const importListFile = (file, onDone) => {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const items = parseMultiItemWorkbook(evt.target.result, (sheetName, quotes) => ({ sheetName, quotes }));
+        if (items.length === 0) { alert("가져올 내용이 없어요."); return; }
+        onDone(items);
+        alert(`${items.length}개 항목을 가져왔어요.`);
+      } catch (err) {
+        alert("엑셀 파일을 읽지 못했어요: " + (err.message || err));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  const importBookList = (e) => {
+    const file = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    importListFile(file, (items) => {
+      const now = new Date().toISOString().slice(0, 10);
+      setBooks((prev) => [...prev, ...items.map((it) => ({ id: genId(), title: it.sheetName, learnedCount: 0, bookmarkQuoteId: null, readDate: now, quotes: it.quotes }))]);
+    });
+  };
+  const importQuoteSetList = (e) => {
+    const file = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    importListFile(file, (items) => {
+      const now = new Date().toISOString().slice(0, 10);
+      setQuoteSets((prev) => [...prev, ...items.map((it) => ({ id: genId(), title: it.sheetName, learnedCount: 0, bookmarkQuoteId: null, readDate: now, quotes: it.quotes }))]);
+    });
+  };
+  const importSermonList = (e) => {
+    const file = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    importListFile(file, (items) => {
+      setSermons((prev) => {
+        const existingDates = new Set(prev.map((s) => s.date));
+        let cursor = mostRecentSunday(new Date());
+        // 이미 있는 날짜와 안 겹치도록, 비어있는 지난 일요일 자리를 하나씩 찾아서 채운다.
+        const findFreeDate = () => {
+          while (existingDates.has(toDateStr(cursor))) cursor.setDate(cursor.getDate() - 7);
+          const ds = toDateStr(cursor);
+          existingDates.add(ds);
+          cursor.setDate(cursor.getDate() - 7);
+          return ds;
+        };
+        const added = items.map((it) => ({
+          id: genId(),
+          date: findFreeDate(),
+          title: it.sheetName,
+          scripture: "",
+          preacher: DEFAULT_PREACHER,
+          learnedCount: 0,
+          bookmarkQuoteId: null,
+          quotes: it.quotes,
+        }));
+        return [...prev, ...added];
+      });
+    });
+  };
+
   useEffect(() => {
     try { localStorage.setItem(BOOKS_KEY, JSON.stringify(books)); } catch (e) {}
   }, [books]);
+
+  useEffect(() => {
+    try { localStorage.setItem(QUOTESETS_KEY, JSON.stringify(quoteSets)); } catch (e) {}
+  }, [quoteSets]);
 
   useEffect(() => {
     try { localStorage.setItem(SERMONS_KEY, JSON.stringify(sermons)); } catch (e) {}
@@ -1029,6 +1188,7 @@ function App() {
       ...undoStackRef.current,
       {
         books: JSON.parse(JSON.stringify(books)),
+        quoteSets: JSON.parse(JSON.stringify(quoteSets)),
         sermons: JSON.parse(JSON.stringify(sermons)),
         deletedSermonDates: [...deletedSermonDates],
       },
@@ -1041,6 +1201,7 @@ function App() {
     const last = stack[stack.length - 1];
     undoStackRef.current = stack.slice(0, -1);
     setBooks(last.books);
+    setQuoteSets(last.quoteSets || []);
     setSermons(last.sermons);
     setDeletedSermonDates(last.deletedSermonDates || []);
     setUndoCount(undoStackRef.current.length);
@@ -1068,6 +1229,7 @@ function App() {
   }, []);
 
   const currentBook = books.find((b) => b.id === currentBookId) || null;
+  const currentQuoteSet = quoteSets.find((b) => b.id === currentQuoteSetId) || null;
   const currentSermon = sermons.find((s) => s.id === currentSermonId) || null;
   const preacherOptions = Array.from(new Set([DEFAULT_PREACHER, ...sermons.map((s) => s.preacher).filter(Boolean)]));
 
@@ -1077,6 +1239,14 @@ function App() {
   const renameBook = (title) => {
     if (!currentBook) return;
     updateBook({ ...currentBook, title });
+  };
+
+  const updateQuoteSet = (nextSet) => {
+    setQuoteSets((prev) => prev.map((b) => (b.id === nextSet.id ? nextSet : b)));
+  };
+  const renameQuoteSet = (title) => {
+    if (!currentQuoteSet) return;
+    updateQuoteSet({ ...currentQuoteSet, title });
   };
 
   const updateSermon = (nextSermon) => {
@@ -1123,6 +1293,22 @@ function App() {
     setBooks((prev) => prev.filter((b) => b.id !== id));
   };
 
+  const [newQuoteSetTitle, setNewQuoteSetTitle] = useState("");
+  const addQuoteSet = () => {
+    const trimmed = newQuoteSetTitle.trim();
+    if (!trimmed) return;
+    const set = { id: genId(), title: trimmed, learnedCount: 0, bookmarkQuoteId: null, readDate: new Date().toISOString().slice(0, 10), quotes: [] };
+    setQuoteSets((prev) => [...prev, set]);
+    setNewQuoteSetTitle("");
+    setCurrentQuoteSetId(set.id);
+    setQuoteSetView("book");
+  };
+
+  const deleteQuoteSet = (id) => {
+    pushUndoSnapshot();
+    setQuoteSets((prev) => prev.filter((b) => b.id !== id));
+  };
+
   if (mainSection === "home") {
     return (
       <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
@@ -1152,13 +1338,27 @@ function App() {
 
           <div
             onClick={() => setMainSection("sermon")}
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", cursor: "pointer" }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", marginBottom: 10, cursor: "pointer" }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 30 }}>⛪</span>
               <div>
                 <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>교회설교요약</div>
                 <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{sermons.length}개의 주일 설교</div>
+              </div>
+            </div>
+            <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
+          </div>
+
+          <div
+            onClick={() => { setMainSection("quotes"); setQuoteSetView("index"); }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", cursor: "pointer" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 30 }}>{QUOTES_ICON}</span>
+              <div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>명언</div>
+                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{quoteSets.length}개의 명언 모음</div>
               </div>
             </div>
             <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
@@ -1188,6 +1388,13 @@ function App() {
             onBackToReading={() => setMainSection("home")}
             undo={undo}
             undoCount={undoCount}
+            onImport={importSermonList}
+            onExport={exportSermonList}
+            fileInputRef={sermonListFileInputRef}
+            rowRefs={sermonListRowRefs}
+            bookmarkedId={bookmarkedSermonId}
+            onToggleBookmark={toggleBookmarkedSermon}
+            onJumpToBookmark={jumpToBookmarkedSermon}
           />
         )}
         {sermonView === "detail" && currentSermon && (
@@ -1196,6 +1403,137 @@ function App() {
             onBack={() => setSermonView("list")}
             onUpdateSermon={updateSermon}
             preacherOptions={preacherOptions}
+            onSnapshotUndo={pushUndoSnapshot}
+            undo={undo}
+            undoCount={undoCount}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (mainSection === "quotes") {
+    return (
+      <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+        {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
+        <style>{`
+          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
+          .field:focus { outline:none; border-color:#c9974a; }
+          .iconbtn { background:none; border:none; cursor:pointer; }
+        `}</style>
+
+        {quoteSetView === "index" && (
+          <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <button onClick={() => setMainSection("home")} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13 }}>← 홈으로</button>
+              <button
+                onClick={undo}
+                disabled={undoCount === 0}
+                className="iconbtn"
+                style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
+              >
+                ↺ 실행취소{undoCount > 0 ? ` (${undoCount})` : ""}
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+              <input type="file" accept=".xlsx,.xls" ref={quoteSetListFileInputRef} onChange={importQuoteSetList} style={{ display: "none" }} />
+              <button onClick={() => quoteSetListFileInputRef.current && quoteSetListFileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
+              <button onClick={exportQuoteSetList} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
+              <button onClick={jumpToBookmarkedQuoteSet} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
+                책갈피로
+              </button>
+            </div>
+            <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4 }}>{QUOTES_ICON} 명언</div>
+            <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>제목을 눌러 주요문을 보고, 아래에서 새 명언 모음을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
+
+            {quoteSets.length === 0 && (
+              <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 명언이 없어요.</div>
+            )}
+
+            {[...quoteSets]
+              .sort((a, b) => {
+                const da = a.readDate || "";
+                const db = b.readDate || "";
+                if (!da && !db) return 0;
+                if (!da) return 1;
+                if (!db) return -1;
+                return db.localeCompare(da);
+              })
+              .map((b, idx) => (
+              <div key={b.id} ref={(el) => { if (el) quoteSetListRowRefs.current[b.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0, paddingTop: 2 }}>
+                  <div className="field" style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}>{idx + 1}</div>
+                  <button type="button" onClick={() => toggleBookmarkedQuoteSet(b.id)} style={{ width: 22, height: 22, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <svg width="15" height="19" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1 1h14v18l-7-5-7 5V1z" fill={bookmarkedQuoteSetId === b.id ? "#c9974a" : "#3a4150"} stroke={bookmarkedQuoteSetId === b.id ? "#c9974a" : "#5a6274"} strokeWidth="1" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <SwipeRow
+                    onNavigate={() => { setCurrentQuoteSetId(b.id); setQuoteSetView("book"); }}
+                    content={
+                      <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 19, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title || "(제목 없음)"}</div>
+                          <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
+                            주요문 {b.quotes.length}개 · 읽은날짜 {b.readDate || "미설정"} · 익힘 {b.learnedCount || 0}번
+                          </div>
+                        </div>
+                        <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
+                      </div>
+                    }
+                    actions={(close) => (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); close(); }}
+                          style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 13 }}
+                        >
+                          취소
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteQuoteSet(b.id); }}
+                          style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 13 }}
+                        >
+                          삭제
+                        </button>
+                      </>
+                    )}
+                  />
+                </div>
+              </div>
+            ))}
+
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 명언 제목을 입력하고 추가하세요</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  value={newQuoteSetTitle}
+                  onChange={(e) => setNewQuoteSetTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") addQuoteSet(); }}
+                  placeholder="새 명언 제목 (예: 인생명언)"
+                  className="field"
+                  style={{ flex: 1, fontSize: 14, padding: "10px 12px" }}
+                />
+                <button
+                  onClick={addQuoteSet}
+                  className="iconbtn"
+                  style={{ border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, fontSize: 13, borderRadius: 10, padding: "0 16px", whiteSpace: "nowrap" }}
+                >
+                  + 추가
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {quoteSetView === "book" && currentQuoteSet && (
+          <BookQuotesView
+            book={currentQuoteSet}
+            onBack={() => setQuoteSetView("index")}
+            onUpdateBook={updateQuoteSet}
+            onRenameBook={renameQuoteSet}
             onSnapshotUndo={pushUndoSnapshot}
             undo={undo}
             undoCount={undoCount}
@@ -1216,7 +1554,7 @@ function App() {
 
       {mainView === "index" && (
         <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
             <button onClick={() => setMainSection("home")} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13 }}>← 홈으로</button>
             <button
               onClick={undo}
@@ -1225,6 +1563,15 @@ function App() {
               style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
             >
               ↺ 실행취소{undoCount > 0 ? ` (${undoCount})` : ""}
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            <input type="file" accept=".xlsx,.xls" ref={bookListFileInputRef} onChange={importBookList} style={{ display: "none" }} />
+            <button onClick={() => bookListFileInputRef.current && bookListFileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
+            <button onClick={exportBookList} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
+            <button onClick={jumpToBookmarkedBook} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
+              책갈피로
             </button>
           </div>
           <div style={{ fontSize: 41, fontWeight: 800, marginBottom: 4 }}>📖 독서완료</div>
@@ -1243,38 +1590,49 @@ function App() {
               if (!db) return -1;
               return db.localeCompare(da); // 최근에 읽은 책이 먼저
             })
-            .map((b) => (
-            <SwipeRow
-              key={b.id}
-              onNavigate={() => { setCurrentBookId(b.id); setMainView("book"); }}
-              content={
-                <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 19, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title || "(제목 없음)"}</div>
-                    <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
-                      주요문 {b.quotes.length}개 · 읽은날짜 {b.readDate || "미설정"} · 익힘 {b.learnedCount || 0}번
+            .map((b, idx) => (
+            <div key={b.id} ref={(el) => { if (el) bookListRowRefs.current[b.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0, paddingTop: 2 }}>
+                <div className="field" style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}>{idx + 1}</div>
+                <button type="button" onClick={() => toggleBookmarkedBook(b.id)} style={{ width: 22, height: 22, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <svg width="15" height="19" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M1 1h14v18l-7-5-7 5V1z" fill={bookmarkedBookId === b.id ? "#c9974a" : "#3a4150"} stroke={bookmarkedBookId === b.id ? "#c9974a" : "#5a6274"} strokeWidth="1" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <SwipeRow
+                  onNavigate={() => { setCurrentBookId(b.id); setMainView("book"); }}
+                  content={
+                    <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 19, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title || "(제목 없음)"}</div>
+                        <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
+                          주요문 {b.quotes.length}개 · 읽은날짜 {b.readDate || "미설정"} · 익힘 {b.learnedCount || 0}번
+                        </div>
+                      </div>
+                      <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
                     </div>
-                  </div>
-                  <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
-                </div>
-              }
-              actions={(close) => (
-                <>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); close(); }}
-                    style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 13 }}
-                  >
-                    취소
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); deleteBook(b.id); }}
-                    style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 13 }}
-                  >
-                    삭제
-                  </button>
-                </>
-              )}
-            />
+                  }
+                  actions={(close) => (
+                    <>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); close(); }}
+                        style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 13 }}
+                      >
+                        취소
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteBook(b.id); }}
+                        style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 13 }}
+                      >
+                        삭제
+                      </button>
+                    </>
+                  )}
+                />
+              </div>
+            </div>
           ))}
 
           <div style={{ marginTop: 6 }}>
