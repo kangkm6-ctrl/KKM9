@@ -1474,6 +1474,13 @@ function App() {
     setUndoCount(undoStackRef.current.length);
   };
 
+  // 화면(목록/상세)을 벗어나면 그 화면에서 쌓인 실행취소 기록은 초기화한다 —
+  // 실행취소는 "지금 보고 있는 화면"에서 일어난 일만 되돌릴 수 있게 한다.
+  useEffect(() => {
+    undoStackRef.current = [];
+    setUndoCount(0);
+  }, [mainSection, mainView, quoteSetView, sermonView]);
+
   // 화면을 열어두고 5분간 움직임(터치/입력 등)이 없으면 화면을 어둡게 꺼서 보여준다.
   // (웹앱은 기기의 실제 화면 밝기/잠금을 직접 끌 수는 없어서, 앱 내용을 검게 가려 "꺼진 것처럼" 만든다.
   //  아무 곳이나 다시 터치하면 켜진다.)
