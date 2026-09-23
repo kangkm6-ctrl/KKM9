@@ -943,7 +943,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   );
 }
 
-function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, onChangeNewSermonDate, onAddSermon, onBackToReading, undo, undoCount, onImport, onExport, fileInputRef, rowRefs, bookmarkedId, onToggleBookmark, onJumpToBookmark }) {
+function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, onChangeNewSermonDate, onAddSermon, onBackToReading, undo, undoCount, onImport, onExport, fileInputRef, rowRefs, bookmarkedId, onToggleBookmark, onJumpToBookmark, label, onChangeLabel }) {
   const [searchQuery, setSearchQuery] = useState("");
   const sorted = [...sermons]
     .filter((s) => {
@@ -983,7 +983,14 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
         </div>
     </div>
     <div style={{ padding: "0 16px 20px" }}>
-      <div style={{ fontSize: 33, fontWeight: 800, marginBottom: 4 }}>⛪ 교회설교요약</div>
+      <div style={{ fontSize: 33, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+        <span>⛪</span>
+        <input
+          value={label}
+          onChange={(e) => onChangeLabel(e.target.value)}
+          style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 33, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
+        />
+      </div>
       <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>
         매주 일요일 날짜가 자동으로 추가돼요(앱을 열 때 그 사이 빠진 주를 채워 넣어요). 필요하면 날짜를 직접 추가할 수도 있어요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.
       </div>
@@ -1093,6 +1100,19 @@ function App() {
   const [currentQuoteSetId, setCurrentQuoteSetId] = useState(null);
 
   const [mainSection, setMainSection] = useState("home"); // 'home' | 'reading' | 'sermon' | 'quotes'
+
+  const SECTION_LABELS_KEY = "reading-summary-section-labels-v1";
+  const [sectionLabels, setSectionLabels] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SECTION_LABELS_KEY));
+      return { reading: "독서완료", sermon: "교회설교요약", quotes: "명언", ...(saved || {}) };
+    } catch (e) { return { reading: "독서완료", sermon: "교회설교요약", quotes: "명언" }; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(SECTION_LABELS_KEY, JSON.stringify(sectionLabels)); } catch (e) {}
+  }, [sectionLabels]);
+  const setSectionLabel = (key, value) => setSectionLabels((prev) => ({ ...prev, [key]: value }));
+
   const [sermons, setSermons] = useState(() => ensureSundays(loadRawSermons(), new Set(loadDeletedSermonDates())));
   const [deletedSermonDates, setDeletedSermonDates] = useState(loadDeletedSermonDates);
   const [sermonView, setSermonView] = useState("list"); // 'list' | 'detail'
@@ -1282,8 +1302,6 @@ function App() {
     setSermons((prev) => [...prev, s]);
     setDeletedSermonDates((prev) => prev.filter((d) => d !== newSermonDate));
     setNewSermonDate("");
-    setCurrentSermonId(s.id);
-    setSermonView("detail");
   };
   const deleteSermon = (id) => {
     pushUndoSnapshot();
@@ -1302,8 +1320,6 @@ function App() {
     const book = { id: genId(), title: trimmed, learnedCount: 0, bookmarkQuoteId: null, readDate: new Date().toISOString().slice(0, 10), quotes: [] };
     setBooks((prev) => [...prev, book]);
     setNewBookTitle("");
-    setCurrentBookId(book.id);
-    setMainView("book");
   };
 
   const deleteBook = (id) => {
@@ -1319,8 +1335,6 @@ function App() {
     const set = { id: genId(), title: trimmed, learnedCount: 0, bookmarkQuoteId: null, readDate: new Date().toISOString().slice(0, 10), quotes: [] };
     setQuoteSets((prev) => [...prev, set]);
     setNewQuoteSetTitle("");
-    setCurrentQuoteSetId(set.id);
-    setQuoteSetView("book");
   };
 
   const deleteQuoteSet = (id) => {
@@ -1348,7 +1362,7 @@ function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 30 }}>📖</span>
               <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>독서완료</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>{sectionLabels.reading}</div>
                 <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{books.length}권의 책</div>
               </div>
             </div>
@@ -1362,7 +1376,7 @@ function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 30 }}>⛪</span>
               <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>교회설교요약</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>{sectionLabels.sermon}</div>
                 <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{sermons.length}개의 주일 설교</div>
               </div>
             </div>
@@ -1376,7 +1390,7 @@ function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 30 }}>{QUOTES_ICON}</span>
               <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>명언</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>{sectionLabels.quotes}</div>
                 <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{quoteSets.length}개의 명언 모음</div>
               </div>
             </div>
@@ -1414,6 +1428,8 @@ function App() {
             bookmarkedId={bookmarkedSermonId}
             onToggleBookmark={toggleBookmarkedSermon}
             onJumpToBookmark={jumpToBookmarkedSermon}
+            label={sectionLabels.sermon}
+            onChangeLabel={(v) => setSectionLabel("sermon", v)}
           />
         )}
         {sermonView === "detail" && currentSermon && (
@@ -1464,7 +1480,14 @@ function App() {
               </div>
           </div>
           <div style={{ padding: "0 16px 20px" }}>
-            <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4 }}>{QUOTES_ICON} 명언</div>
+            <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+              <span>{QUOTES_ICON}</span>
+              <input
+                value={sectionLabels.quotes}
+                onChange={(e) => setSectionLabel("quotes", e.target.value)}
+                style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 27, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
+              />
+            </div>
             <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>제목을 눌러 주요문을 보고, 아래에서 새 명언 모음을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
 
             <input
@@ -1609,7 +1632,14 @@ function App() {
             </div>
           </div>
           <div style={{ padding: "0 16px 20px" }}>
-          <div style={{ fontSize: 41, fontWeight: 800, marginBottom: 4 }}>📖 독서완료</div>
+          <div style={{ fontSize: 41, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+            <span>📖</span>
+            <input
+              value={sectionLabels.reading}
+              onChange={(e) => setSectionLabel("reading", e.target.value)}
+              style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 41, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
+            />
+          </div>
           <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
 
           <input
