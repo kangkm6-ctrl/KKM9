@@ -74,31 +74,68 @@ const splitLeadingNumber = (raw) => {
   return { leadingNumber: num(m[1]), text: m[2].trim() };
 };
 
+// "1-1", "1.2" 처럼 상위번호-하위번호로 된 줄을 인식한다. 상위 숫자 뒤에 하위 숫자가 붙어있으면
+// 그 상위번호의 하위 항목으로 보고, 정렬 시 상위번호 바로 다음에 오도록 소수 형태의 정렬값을 만든다.
+const parseHierNumber = (raw) => {
+  const m = raw.match(/^\s*(\d{1,4})\s*[.\-](\d{1,4})\s*[.)\-:]?\s+(\S[\s\S]*)$/);
+  if (!m) return null;
+  const major = num(m[1]);
+  const minor = num(m[2]);
+  return { major, minor, sortValue: major + minor / 1000, label: `${m[1]}-${m[2]}`, text: m[3].trim() };
+};
+
 // 아이폰 메모 앱과 주고받기 위한 순수 텍스트 변환 (메모 앱은 별도 API가 없어서,
-// 공유시트/복사-붙여넣기를 매개로 삼는다).
+// 공유시트/복사-붙여넣기를 매개로 삼는다). 본문이 "1-1" 같은 하위번호나 대시("-")로 시작하면
+// 새 상위번호를 매기지 않고 그 모양 그대로 들여써서, 바로 위의 상위 항목의 하위로 함께 보이게 한다.
 const buildQuotesPlainText = (title, quotes) => {
   const sorted = [...quotes].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
-  const lines = sorted.map((q, idx) => `${idx + 1}. ${q.text}`);
+  let topCounter = 0;
+  const lines = sorted.map((q) => {
+    const hier = parseHierNumber(q.text);
+    if (hier) return `   ${hier.label}. ${hier.text}`;
+    if (/^[-–—]\s*\S/.test(q.text)) return `   ${q.text}`;
+    topCounter += 1;
+    return `${topCounter}. ${q.text}`;
+  });
   return `${title || "제목 없음"}\n\n${lines.join("\n\n")}`;
 };
 const parseQuotesFromPlainText = (text) => {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line)
-    .map((line, idx) => {
-      const { leadingNumber, text } = splitLeadingNumber(line);
-      return { text, leadingNumber, order: idx };
-    })
-    .filter((q) => q.text)
-    // 번호가 붙어있던 줄은 그 번호 순서대로, 번호가 없는 줄은 원래 붙여넣은 순서를 그대로 따른다.
+  const rawLines = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line);
+  let currentParent = null; // 가장 최근에 나온 상위 숫자
+  let subCounter = 0; // 그 상위 숫자 아래 하위 항목이 몇 번째인지
+  const items = rawLines.map((line, idx) => {
+    const hier = parseHierNumber(line);
+    if (hier) {
+      currentParent = hier.major;
+      subCounter += 1;
+      return { text: `${hier.label}. ${hier.text}`, sortValue: hier.major + subCounter * 0.0001, order: idx };
+    }
+    const { leadingNumber, text: stripped } = splitLeadingNumber(line);
+    if (leadingNumber != null) {
+      currentParent = leadingNumber;
+      subCounter = 0;
+      return { text: stripped, sortValue: leadingNumber, order: idx };
+    }
+    // 숫자가 아예 없는 줄(맨 앞 대시("-") 표시가 있는 줄 포함): 바로 앞에 나온 상위 숫자가
+    // 있으면 그 숫자의 하위 항목으로, 다음 숫자가 나오기 전까지 붙여넣은 순서 그대로 이어붙인다.
+    // 대시는 그대로 두고 내용에서 떼어내지 않는다 (내보낼 때도 같은 모양으로 남겨야 하므로).
+    if (currentParent != null) {
+      subCounter += 1;
+      return { text: line, sortValue: currentParent + subCounter * 0.0001, order: idx, isPlainSub: true };
+    }
+    return { text: line, sortValue: null, order: idx };
+  });
+  return items
+    .filter((it) => it.text)
+    // 번호가 붙어있던 줄은 그 번호 순서대로(하위번호·숫자 없는 하위문장은 상위번호 바로 다음에),
+    // 번호가 하나도 없는 줄은 원래 붙여넣은 순서를 그대로 따른다.
     .sort((a, b) => {
-      if (a.leadingNumber != null && b.leadingNumber != null) return a.leadingNumber - b.leadingNumber;
-      if (a.leadingNumber != null) return -1;
-      if (b.leadingNumber != null) return 1;
+      if (a.sortValue != null && b.sortValue != null) return a.sortValue - b.sortValue;
+      if (a.sortValue != null) return -1;
+      if (b.sortValue != null) return 1;
       return a.order - b.order;
     })
-    .map((q) => q.text);
+    .map((it) => it.text);
 };
 
 const buildQuotesWorkbook = (title, quotes) => {
