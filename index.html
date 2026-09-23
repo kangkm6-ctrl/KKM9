@@ -383,6 +383,12 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   const addQuote = () => {
     const text = newQuoteText.trim();
     if (!text) return;
+    if (isDuplicateText(text, book.quotes.map((q) => q.text))) {
+      setNewQuoteNumber("");
+      setNewQuoteText("");
+      alert("기존 주요문과 80% 이상 비슷한 내용이라 기존 내용을 그대로 두고 추가하지 않았어요.");
+      return;
+    }
     const maxNum = book.quotes.reduce((m, q) => Math.max(m, num(q.number) || 0), 0);
     const number = newQuoteNumber.trim() ? num(newQuoteNumber) : maxNum + 1;
     persistQuotes([...book.quotes, { id: genId(), number, text }]);
@@ -587,6 +593,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
             </svg>
             책갈피로
           </button>
+          <button onClick={shareToNotes} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📤 메모내보내기</button>
           <button
             onClick={undo}
             disabled={undoCount === 0}
@@ -595,7 +602,6 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
           >
             ↺{undoCount > 0 ? ` ${undoCount}` : ""}
           </button>
-          <button onClick={shareToNotes} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📤 메모내보내기</button>
         </div>
       </div>
       <div style={{ padding: "0 8px 40px" }}>
@@ -764,6 +770,12 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   const addQuote = () => {
     const text = newQuoteText.trim();
     if (!text) return;
+    if (isDuplicateText(text, sermon.quotes.map((q) => q.text))) {
+      setNewQuoteNumber("");
+      setNewQuoteText("");
+      alert("기존 주요문과 80% 이상 비슷한 내용이라 기존 내용을 그대로 두고 추가하지 않았어요.");
+      return;
+    }
     const maxNum = sermon.quotes.reduce((m, q) => Math.max(m, num(q.number) || 0), 0);
     const number = newQuoteNumber.trim() ? num(newQuoteNumber) : maxNum + 1;
     persistQuotes([...sermon.quotes, { id: genId(), number, text }]);
@@ -1000,6 +1012,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
           <button onClick={exportToExcel} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
           <button onClick={jumpToBookmark} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📍 책갈피로</button>
+          <button onClick={shareToNotes} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📤 메모내보내기</button>
           <button
             onClick={undo}
             disabled={undoCount === 0}
@@ -1008,7 +1021,6 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           >
             ↺{undoCount > 0 ? ` ${undoCount}` : ""}
           </button>
-          <button onClick={shareToNotes} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📤 메모내보내기</button>
         </div>
       </div>
       <div style={{ padding: "0 8px 40px" }}>
