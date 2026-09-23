@@ -371,8 +371,6 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
-  const [showNotesImport, setShowNotesImport] = useState(false);
-  const [notesImportText, setNotesImportText] = useState("");
   const quoteRowRefs = useRef({});
   const fileInputRef = useRef(null);
 
@@ -448,23 +446,43 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     }
   };
 
-  const importFromNotesText = () => {
-    const lines = parseQuotesFromPlainText(notesImportText);
-    if (lines.length === 0) { alert("가져올 내용이 없어요."); return; }
+  const importFromNotesText = (rawText) => {
+    const lines = rawText.split(/\r?\n/);
+    let title = null;
+    let bodyText = rawText;
+    // 우리 내보내기 형식(제목 줄 다음 빈 줄)과 같은 모양이면 첫 줄을 제목으로 분리한다.
+    if (lines.length > 1 && lines[0].trim() && lines[1] !== undefined && lines[1].trim() === "") {
+      title = lines[0].trim();
+      bodyText = lines.slice(2).join("\n");
+    }
+    const parsed = parseQuotesFromPlainText(bodyText);
+    if (parsed.length === 0) return false;
     const acceptedTexts = book.quotes.map((q) => q.text);
     const uniqueImported = [];
-    for (const text of lines) {
+    for (const text of parsed) {
       if (isDuplicateText(text, acceptedTexts)) continue;
       acceptedTexts.push(text);
       uniqueImported.push({ id: genId(), number: 0, text });
     }
-    const skipped = lines.length - uniqueImported.length;
-    if (uniqueImported.length === 0) { alert("가져올 새 내용이 없어요 (전부 이미 있는 내용과 80% 이상 비슷해요)."); return; }
-    const merged = [...book.quotes, ...uniqueImported];
-    persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
-    setNotesImportText("");
-    setShowNotesImport(false);
-    alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}`);
+    const skipped = parsed.length - uniqueImported.length;
+    if (uniqueImported.length > 0) {
+      const merged = [...book.quotes, ...uniqueImported];
+      persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
+    }
+    if (title) {
+      setTitleDraft(title);
+      onRenameBook(title);
+    }
+    alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}${title ? ` 제목도 "${title}"(으)로 반영했어요.` : ""}`);
+    return true;
+  };
+
+  const handleNewQuotePaste = (e) => {
+    const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
+    if (!pasted || !pasted.includes("\n")) return; // 한 줄짜리는 기본 붙여넣기 그대로 둔다
+    e.preventDefault();
+    const handled = importFromNotesText(pasted);
+    if (!handled) setNewQuoteText((prev) => prev + pasted);
   };
 
   const handleImportFile = (e) => {
@@ -548,27 +566,9 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
           >
             ↺{undoCount > 0 ? ` ${undoCount}` : ""}
           </button>
-          <button onClick={() => setShowNotesImport((v) => !v)} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📥 메모가져오기</button>
           <button onClick={shareToNotes} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📤 메모내보내기</button>
         </div>
       </div>
-      {showNotesImport && (
-        <div style={{ margin: "0 10px 12px", padding: 10, borderRadius: 10, border: "1px solid #262c37", background: "#1a1f28" }}>
-          <div style={{ fontSize: 11.5, color: "#8993a6", marginBottom: 6 }}>메모 앱에서 복사한 내용을 붙여넣으세요 (줄마다 하나씩 주요문으로 들어가요)</div>
-          <textarea
-            value={notesImportText}
-            onChange={(e) => setNotesImportText(e.target.value)}
-            placeholder="여기에 붙여넣으세요"
-            className="field"
-            rows={4}
-            style={{ fontSize: 14, color: "#e7eaf0", lineHeight: 1.5, resize: "vertical", marginBottom: 8 }}
-          />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={importFromNotesText} className="iconbtn" style={{ flex: 1, border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "8px 0" }}>가져오기</button>
-            <button onClick={() => { setShowNotesImport(false); setNotesImportText(""); }} className="iconbtn" style={{ flex: 1, border: "1px solid #3a4150", background: "transparent", color: "#8993a6", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "8px 0" }}>취소</button>
-          </div>
-        </div>
-      )}
       <div style={{ padding: "0 8px 40px" }}>
         <div style={{ marginBottom: 16 }}>
           <input
@@ -618,7 +618,8 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
               value={newQuoteText}
               onChange={(e) => setNewQuoteText(e.target.value)}
               onBlur={addQuote}
-              placeholder="내용을 입력하거나 붙여넣으세요"
+              onPaste={handleNewQuotePaste}
+              placeholder="내용을 입력하거나 붙여넣으세요 (메모에서 여러 줄을 붙여넣으면 자동으로 나뉘어 들어가요)"
               className="field"
               rows={3}
               style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
@@ -721,8 +722,6 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
-  const [showNotesImport, setShowNotesImport] = useState(false);
-  const [notesImportText, setNotesImportText] = useState("");
   const quoteRowRefs = useRef({});
   const fileInputRef = useRef(null);
 
@@ -799,23 +798,39 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     }
   };
 
-  const importFromNotesText = () => {
-    const lines = parseQuotesFromPlainText(notesImportText);
-    if (lines.length === 0) { alert("가져올 내용이 없어요."); return; }
+  const importFromNotesText = (rawText) => {
+    const lines = rawText.split(/\r?\n/);
+    let title = null;
+    let bodyText = rawText;
+    if (lines.length > 1 && lines[0].trim() && lines[1] !== undefined && lines[1].trim() === "") {
+      title = lines[0].trim();
+      bodyText = lines.slice(2).join("\n");
+    }
+    const parsed = parseQuotesFromPlainText(bodyText);
+    if (parsed.length === 0) return false;
     const acceptedTexts = sermon.quotes.map((q) => q.text);
     const uniqueImported = [];
-    for (const text of lines) {
+    for (const text of parsed) {
       if (isDuplicateText(text, acceptedTexts)) continue;
       acceptedTexts.push(text);
       uniqueImported.push({ id: genId(), number: 0, text });
     }
-    const skipped = lines.length - uniqueImported.length;
-    if (uniqueImported.length === 0) { alert("가져올 새 내용이 없어요 (전부 이미 있는 내용과 80% 이상 비슷해요)."); return; }
-    const merged = [...sermon.quotes, ...uniqueImported];
-    persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
-    setNotesImportText("");
-    setShowNotesImport(false);
-    alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}`);
+    const skipped = parsed.length - uniqueImported.length;
+    if (uniqueImported.length > 0) {
+      const merged = [...sermon.quotes, ...uniqueImported];
+      persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
+    }
+    if (title) onUpdateSermon({ ...sermon, title });
+    alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}${title ? ` 제목도 "${title}"(으)로 반영했어요.` : ""}`);
+    return true;
+  };
+
+  const handleNewQuotePaste = (e) => {
+    const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
+    if (!pasted || !pasted.includes("\n")) return;
+    e.preventDefault();
+    const handled = importFromNotesText(pasted);
+    if (!handled) setNewQuoteText((prev) => prev + pasted);
   };
 
   const handleImportFile = (e) => {
@@ -935,27 +950,9 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           >
             ↺{undoCount > 0 ? ` ${undoCount}` : ""}
           </button>
-          <button onClick={() => setShowNotesImport((v) => !v)} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📥 메모가져오기</button>
           <button onClick={shareToNotes} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>📤 메모내보내기</button>
         </div>
       </div>
-      {showNotesImport && (
-        <div style={{ margin: "0 10px 12px", padding: 10, borderRadius: 10, border: "1px solid #262c37", background: "#1a1f28" }}>
-          <div style={{ fontSize: 11.5, color: "#8993a6", marginBottom: 6 }}>메모 앱에서 복사한 내용을 붙여넣으세요 (줄마다 하나씩 주요문으로 들어가요)</div>
-          <textarea
-            value={notesImportText}
-            onChange={(e) => setNotesImportText(e.target.value)}
-            placeholder="여기에 붙여넣으세요"
-            className="field"
-            rows={4}
-            style={{ fontSize: 14, color: "#e7eaf0", lineHeight: 1.5, resize: "vertical", marginBottom: 8 }}
-          />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={importFromNotesText} className="iconbtn" style={{ flex: 1, border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "8px 0" }}>가져오기</button>
-            <button onClick={() => { setShowNotesImport(false); setNotesImportText(""); }} className="iconbtn" style={{ flex: 1, border: "1px solid #3a4150", background: "transparent", color: "#8993a6", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "8px 0" }}>취소</button>
-          </div>
-        </div>
-      )}
       <div style={{ padding: "0 8px 40px" }}>
         <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1046,7 +1043,8 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
               value={newQuoteText}
               onChange={(e) => setNewQuoteText(e.target.value)}
               onBlur={addQuote}
-              placeholder="내용을 입력하거나 붙여넣으세요"
+              onPaste={handleNewQuotePaste}
+              placeholder="내용을 입력하거나 붙여넣으세요 (메모에서 여러 줄을 붙여넣으면 자동으로 나뉘어 들어가요)"
               className="field"
               rows={3}
               style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
