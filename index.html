@@ -465,14 +465,13 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
       uniqueImported.push({ id: genId(), number: 0, text });
     }
     const skipped = parsed.length - uniqueImported.length;
-    if (uniqueImported.length > 0) {
-      const merged = [...book.quotes, ...uniqueImported];
-      persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
-    }
-    if (title) {
-      setTitleDraft(title);
-      onRenameBook(title);
-    }
+    const finalQuotes = uniqueImported.length > 0
+      ? [...book.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 }))
+      : book.quotes;
+    // 제목 변경과 주요문 추가를 한 번의 업데이트로 같이 반영한다(따로 호출하면 나중 호출이
+    // 앞 호출로 바뀐 내용을 오래된 상태로 덮어써버리는 문제가 있었다).
+    onUpdateBook({ ...book, quotes: finalQuotes, ...(title ? { title } : {}) });
+    if (title) setTitleDraft(title);
     alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}${title ? ` 제목도 "${title}"(으)로 반영했어요.` : ""}`);
     return true;
   };
@@ -483,6 +482,36 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     e.preventDefault();
     const handled = importFromNotesText(pasted);
     if (!handled) setNewQuoteText((prev) => prev + pasted);
+  };
+
+  // 제목 칸은 한 줄짜리 입력창이라, 여러 줄을 그대로 붙여넣으면 브라우저가 첫 줄만 남기고
+  // 나머지를 버려버린다. 그래서 제목 칸에 붙여넣을 때도 첫 줄은 제목으로, 나머지는 주요문으로
+  // 직접 나눠서 넣어준다 (이때는 첫 줄 뒤에 빈 줄이 없어도 항상 첫 줄을 제목으로 본다).
+  const handleTitlePaste = (e) => {
+    const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
+    if (!pasted || !pasted.includes("\n")) return;
+    e.preventDefault();
+    const lines = pasted.split(/\r?\n/);
+    const firstIdx = lines.findIndex((l) => l.trim());
+    if (firstIdx === -1) return;
+    const title = lines[firstIdx].trim();
+    let bodyLines = lines.slice(firstIdx + 1);
+    if (bodyLines[0] !== undefined && bodyLines[0].trim() === "") bodyLines = bodyLines.slice(1);
+    const parsed = parseQuotesFromPlainText(bodyLines.join("\n"));
+    const acceptedTexts = book.quotes.map((q) => q.text);
+    const uniqueImported = [];
+    for (const text of parsed) {
+      if (isDuplicateText(text, acceptedTexts)) continue;
+      acceptedTexts.push(text);
+      uniqueImported.push({ id: genId(), number: 0, text });
+    }
+    const skipped = parsed.length - uniqueImported.length;
+    const finalQuotes = uniqueImported.length > 0
+      ? [...book.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 }))
+      : book.quotes;
+    onUpdateBook({ ...book, quotes: finalQuotes, title });
+    setTitleDraft(title);
+    alert(`제목을 "${title}"(으)로 반영했어요.${uniqueImported.length > 0 ? ` 주요문 ${uniqueImported.length}개도 가져왔어요.` : ""}${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}`);
   };
 
   const handleImportFile = (e) => {
@@ -575,6 +604,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
             value={titleDraft}
             onChange={(e) => setTitleDraft(e.target.value)}
             onBlur={() => onRenameBook(titleDraft.trim() || "(제목 없음)")}
+            onPaste={handleTitlePaste}
             placeholder="책 제목"
             style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontSize: 27, fontWeight: 800, color: "#e7eaf0", lineHeight: 1.4, padding: 0, marginBottom: 10 }}
           />
@@ -816,11 +846,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
       uniqueImported.push({ id: genId(), number: 0, text });
     }
     const skipped = parsed.length - uniqueImported.length;
-    if (uniqueImported.length > 0) {
-      const merged = [...sermon.quotes, ...uniqueImported];
-      persistQuotes(merged.map((q, idx) => ({ ...q, number: idx + 1 })));
-    }
-    if (title) onUpdateSermon({ ...sermon, title });
+    const finalQuotes = uniqueImported.length > 0
+      ? [...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 }))
+      : sermon.quotes;
+    // 제목 변경과 주요문 추가를 한 번의 업데이트로 같이 반영한다.
+    onUpdateSermon({ ...sermon, quotes: finalQuotes, ...(title ? { title } : {}) });
     alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}${title ? ` 제목도 "${title}"(으)로 반영했어요.` : ""}`);
     return true;
   };
@@ -831,6 +861,34 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     e.preventDefault();
     const handled = importFromNotesText(pasted);
     if (!handled) setNewQuoteText((prev) => prev + pasted);
+  };
+
+  // 제목 칸은 한 줄짜리 입력창이라 여러 줄을 그대로 붙여넣으면 브라우저가 첫 줄만 남기고
+  // 나머지를 버린다. 제목 칸에 붙여넣을 때는 첫 줄은 제목으로, 나머지는 주요문으로 나눠 넣는다.
+  const handleTitlePaste = (e) => {
+    const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
+    if (!pasted || !pasted.includes("\n")) return;
+    e.preventDefault();
+    const lines = pasted.split(/\r?\n/);
+    const firstIdx = lines.findIndex((l) => l.trim());
+    if (firstIdx === -1) return;
+    const title = lines[firstIdx].trim();
+    let bodyLines = lines.slice(firstIdx + 1);
+    if (bodyLines[0] !== undefined && bodyLines[0].trim() === "") bodyLines = bodyLines.slice(1);
+    const parsed = parseQuotesFromPlainText(bodyLines.join("\n"));
+    const acceptedTexts = sermon.quotes.map((q) => q.text);
+    const uniqueImported = [];
+    for (const text of parsed) {
+      if (isDuplicateText(text, acceptedTexts)) continue;
+      acceptedTexts.push(text);
+      uniqueImported.push({ id: genId(), number: 0, text });
+    }
+    const skipped = parsed.length - uniqueImported.length;
+    const finalQuotes = uniqueImported.length > 0
+      ? [...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 }))
+      : sermon.quotes;
+    onUpdateSermon({ ...sermon, quotes: finalQuotes, title });
+    alert(`제목을 "${title}"(으)로 반영했어요.${uniqueImported.length > 0 ? ` 주요문 ${uniqueImported.length}개도 가져왔어요.` : ""}${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}`);
   };
 
   const handleImportFile = (e) => {
@@ -977,6 +1035,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
             <input
               value={sermon.title}
               onChange={(e) => onUpdateSermon({ ...sermon, title: e.target.value })}
+              onPaste={handleTitlePaste}
               placeholder="설교 제목"
               className="field"
               style={{ flex: 1, minWidth: 0, fontSize: 19, fontWeight: 800, color: "#e7eaf0", padding: "9px 10px" }}
