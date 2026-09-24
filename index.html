@@ -138,6 +138,43 @@ const parseQuotesFromPlainText = (text) => {
     .map((it) => it.text);
 };
 
+// "번호나눔": 번호가 붙은 줄부터 다음 번호가 나오기 전까지의 모든 줄(하위문장, 대시줄 등)을
+// 하나의 주요문으로 묶는다. 줄나눔(한 줄 = 한 개)과 달리 한 번호 블록 전체 = 한 개가 된다.
+const parseQuotesByNumberBlocks = (text) => {
+  const rawLines = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line);
+  const blocks = [];
+  let current = null;
+  rawLines.forEach((line, idx) => {
+    const hier = parseHierNumber(line);
+    if (hier) {
+      current = { text: `${hier.label}. ${hier.text}`, sortValue: hier.major + 0.0001, order: idx };
+      blocks.push(current);
+      return;
+    }
+    const { leadingNumber, text: stripped } = splitLeadingNumber(line);
+    if (leadingNumber != null) {
+      current = { text: stripped, sortValue: leadingNumber, order: idx };
+      blocks.push(current);
+      return;
+    }
+    // 번호 없는 줄: 다음 번호가 나오기 전까지 바로 앞 블록에 이어붙인다.
+    if (current) {
+      current.text = `${current.text}\n${line}`;
+    } else {
+      blocks.push({ text: line, sortValue: null, order: idx });
+    }
+  });
+  return blocks
+    .filter((b) => b.text)
+    .sort((a, b) => {
+      if (a.sortValue != null && b.sortValue != null) return a.sortValue - b.sortValue;
+      if (a.sortValue != null) return -1;
+      if (b.sortValue != null) return 1;
+      return a.order - b.order;
+    })
+    .map((b) => b.text);
+};
+
 const buildQuotesWorkbook = (title, quotes) => {
   const rows = [...quotes]
     .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
@@ -370,7 +407,7 @@ function SwipeRow({ onNavigate, content, actions, actionWidth = 132, gap = 10, b
 function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUndo, undo, undoCount }) {
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
-  const [splitByLine, setSplitByLine] = useState(true);
+  const [splitByNumber, setSplitByNumber] = useState(false);
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
   const quoteRowRefs = useRef({});
   const fileInputRef = useRef(null);
@@ -382,8 +419,32 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     .map((q, idx) => ({ ...q, number: idx + 1 }));
 
   const addQuote = () => {
-    const text = newQuoteText.trim();
+    const raw = newQuoteText;
+    const text = raw.trim();
     if (!text) return;
+    // 번호나눔이 켜져 있으면 번호 블록 단위로(다음 번호 전까지 한 개), 줄나눔이 켜져 있으면
+    // 한 줄씩, 붙여넣기와 똑같은 방식으로 나눠서 주요문을 만든다.
+    const splitParser = splitByNumber ? parseQuotesByNumberBlocks : null;
+    if (splitParser && raw.includes("\n")) {
+      const parsed = splitParser(raw);
+      if (parsed.length > 1) {
+        const acceptedTexts = book.quotes.map((q) => q.text);
+        const uniqueImported = [];
+        for (const t of parsed) {
+          if (isDuplicateText(t, acceptedTexts)) continue;
+          acceptedTexts.push(t);
+          uniqueImported.push({ id: genId(), number: 0, text: t });
+        }
+        const skipped = parsed.length - uniqueImported.length;
+        if (uniqueImported.length > 0) {
+          persistQuotes([...book.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 })));
+        }
+        setNewQuoteNumber("");
+        setNewQuoteText("");
+        if (skipped > 0) alert(`${uniqueImported.length}개를 추가했어요. (80% 이상 비슷한 내용 ${skipped}개 제외)`);
+        return;
+      }
+    }
     if (isDuplicateText(text, book.quotes.map((q) => q.text))) {
       setNewQuoteNumber("");
       setNewQuoteText("");
@@ -454,7 +515,8 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
       title = lines[0].trim();
       bodyText = lines.slice(2).join("\n");
     }
-    const parsed = parseQuotesFromPlainText(bodyText);
+    const splitParser = parseQuotesByNumberBlocks;
+    const parsed = splitParser(bodyText);
     if (parsed.length === 0) return false;
     const acceptedTexts = book.quotes.map((q) => q.text);
     const uniqueImported = [];
@@ -476,7 +538,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   };
 
   const handleNewQuotePaste = (e) => {
-    if (!splitByLine) return; // 줄나눔이 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
+    if (!splitByNumber) return; // 번호나눔이 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
     const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
     if (!pasted || !pasted.includes("\n")) return; // 한 줄짜리는 기본 붙여넣기 그대로 둔다
     e.preventDefault();
@@ -497,7 +559,8 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     const title = lines[firstIdx].trim();
     let bodyLines = lines.slice(firstIdx + 1);
     if (bodyLines[0] !== undefined && bodyLines[0].trim() === "") bodyLines = bodyLines.slice(1);
-    const parsed = parseQuotesFromPlainText(bodyLines.join("\n"));
+    const splitParser = parseQuotesByNumberBlocks;
+    const parsed = splitParser(bodyLines.join("\n"));
     const acceptedTexts = book.quotes.map((q) => q.text);
     const uniqueImported = [];
     for (const text of parsed) {
@@ -648,11 +711,11 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
               <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer" }}>
                 <input
                   type="checkbox"
-                  checked={splitByLine}
-                  onChange={(e) => setSplitByLine(e.target.checked)}
+                  checked={splitByNumber}
+                  onChange={(e) => setSplitByNumber(e.target.checked)}
                   style={{ width: 16, height: 16, accentColor: "#c9974a" }}
                 />
-                <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>줄나눔</span>
+                <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
               </label>
             </div>
             <textarea
@@ -762,7 +825,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
 function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onSnapshotUndo, undo, undoCount }) {
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
-  const [splitByLine, setSplitByLine] = useState(true);
+  const [splitByNumber, setSplitByNumber] = useState(false);
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
   const quoteRowRefs = useRef({});
   const fileInputRef = useRef(null);
@@ -774,8 +837,32 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     .map((q, idx) => ({ ...q, number: idx + 1 }));
 
   const addQuote = () => {
-    const text = newQuoteText.trim();
+    const raw = newQuoteText;
+    const text = raw.trim();
     if (!text) return;
+    // 번호나눔이 켜져 있으면 번호 블록 단위로(다음 번호 전까지 한 개), 줄나눔이 켜져 있으면
+    // 한 줄씩, 붙여넣기와 똑같은 방식으로 나눠서 주요문을 만든다.
+    const splitParser = splitByNumber ? parseQuotesByNumberBlocks : null;
+    if (splitParser && raw.includes("\n")) {
+      const parsed = splitParser(raw);
+      if (parsed.length > 1) {
+        const acceptedTexts = sermon.quotes.map((q) => q.text);
+        const uniqueImported = [];
+        for (const t of parsed) {
+          if (isDuplicateText(t, acceptedTexts)) continue;
+          acceptedTexts.push(t);
+          uniqueImported.push({ id: genId(), number: 0, text: t });
+        }
+        const skipped = parsed.length - uniqueImported.length;
+        if (uniqueImported.length > 0) {
+          persistQuotes([...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 })));
+        }
+        setNewQuoteNumber("");
+        setNewQuoteText("");
+        if (skipped > 0) alert(`${uniqueImported.length}개를 추가했어요. (80% 이상 비슷한 내용 ${skipped}개 제외)`);
+        return;
+      }
+    }
     if (isDuplicateText(text, sermon.quotes.map((q) => q.text))) {
       setNewQuoteNumber("");
       setNewQuoteText("");
@@ -846,7 +933,8 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
       title = lines[0].trim();
       bodyText = lines.slice(2).join("\n");
     }
-    const parsed = parseQuotesFromPlainText(bodyText);
+    const splitParser = parseQuotesByNumberBlocks;
+    const parsed = splitParser(bodyText);
     if (parsed.length === 0) return false;
     const acceptedTexts = sermon.quotes.map((q) => q.text);
     const uniqueImported = [];
@@ -866,7 +954,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   };
 
   const handleNewQuotePaste = (e) => {
-    if (!splitByLine) return; // 줄나눔이 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
+    if (!splitByNumber) return; // 번호나눔이 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
     const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
     if (!pasted || !pasted.includes("\n")) return;
     e.preventDefault();
@@ -886,7 +974,8 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     const title = lines[firstIdx].trim();
     let bodyLines = lines.slice(firstIdx + 1);
     if (bodyLines[0] !== undefined && bodyLines[0].trim() === "") bodyLines = bodyLines.slice(1);
-    const parsed = parseQuotesFromPlainText(bodyLines.join("\n"));
+    const splitParser = parseQuotesByNumberBlocks;
+    const parsed = splitParser(bodyLines.join("\n"));
     const acceptedTexts = sermon.quotes.map((q) => q.text);
     const uniqueImported = [];
     for (const text of parsed) {
@@ -1113,11 +1202,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
               <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer" }}>
                 <input
                   type="checkbox"
-                  checked={splitByLine}
-                  onChange={(e) => setSplitByLine(e.target.checked)}
+                  checked={splitByNumber}
+                  onChange={(e) => setSplitByNumber(e.target.checked)}
                   style={{ width: 16, height: 16, accentColor: "#c9974a" }}
                 />
-                <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>줄나눔</span>
+                <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
               </label>
             </div>
             <textarea
