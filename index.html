@@ -398,23 +398,15 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   };
 
   const updateQuoteNumber = (id, value) => {
-    const parsed = Number(value);
-    if (value.trim() === "" || !Number.isFinite(parsed)) {
-      persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, number: value } : q)));
-      return;
-    }
-    const targetNum = Math.max(parsed, book.learnedCount || 0);
-    const editedItem = book.quotes.find((q) => q.id === id);
-    const rest = book.quotes.filter((q) => q.id !== id).sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
-    const insertAt = Math.max(0, Math.min(rest.length, Math.round(targetNum) - 1));
-    const reordered = [...rest.slice(0, insertAt), editedItem, ...rest.slice(insertAt)];
-    persistQuotes(reordered.map((q, idx) => ({ ...q, number: idx + 1 })));
+    // 번호를 바꿔도 목록에서의 위치(줄)는 그대로 두고, 그 항목의 번호 표시만 바꾼다.
+    persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, number: value.trim() === "" ? value : num(value) } : q)));
   };
 
   const updateQuoteText = (id, value) => {
     if (value.trim() === "") {
       onSnapshotUndo();
-      persistQuotes(renumberQuotes(book.quotes.filter((q) => q.id !== id)));
+      // 지워서 삭제할 때도 남은 항목들의 번호는 그대로 두고(다시 매기지 않고) 그 줄만 뺀다.
+      persistQuotes(book.quotes.filter((q) => q.id !== id));
       return;
     }
     persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, text: value } : q)));
@@ -573,13 +565,13 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   const [titleDraft, setTitleDraft] = useState(book.title || "");
   useEffect(() => { setTitleDraft(book.title || ""); }, [book.id]);
 
-  const filteredQuotes = [...book.quotes]
+  const filteredQuotes = book.quotes
     .filter((q) => {
       const query = quoteSearchQuery.trim().toLowerCase();
       if (!query) return true;
       return q.text.toLowerCase().includes(query) || String(q.number).includes(query);
-    })
-    .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+    });
+    // 번호로 다시 정렬하지 않는다 — 목록 순서는 저장된 순서(줄) 그대로 유지한다.
 
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
@@ -751,7 +743,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                     취소
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onSnapshotUndo(); persistQuotes(renumberQuotes(book.quotes.filter((x) => x.id !== q.id))); }}
+                    onClick={(e) => { e.stopPropagation(); onSnapshotUndo(); persistQuotes(book.quotes.filter((x) => x.id !== q.id)); }}
                     style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 12 }}
                   >
                     삭제
@@ -798,23 +790,15 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   };
 
   const updateQuoteNumber = (id, value) => {
-    const parsed = Number(value);
-    if (value.trim() === "" || !Number.isFinite(parsed)) {
-      persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, number: value } : q)));
-      return;
-    }
-    const targetNum = Math.max(parsed, sermon.learnedCount || 0);
-    const editedItem = sermon.quotes.find((q) => q.id === id);
-    const rest = sermon.quotes.filter((q) => q.id !== id).sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
-    const insertAt = Math.max(0, Math.min(rest.length, Math.round(targetNum) - 1));
-    const reordered = [...rest.slice(0, insertAt), editedItem, ...rest.slice(insertAt)];
-    persistQuotes(reordered.map((q, idx) => ({ ...q, number: idx + 1 })));
+    // 번호를 바꿔도 목록에서의 위치(줄)는 그대로 두고, 그 항목의 번호 표시만 바꾼다.
+    persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, number: value.trim() === "" ? value : num(value) } : q)));
   };
 
   const updateQuoteText = (id, value) => {
     if (value.trim() === "") {
       onSnapshotUndo();
-      persistQuotes(renumberQuotes(sermon.quotes.filter((q) => q.id !== id)));
+      // 지워서 삭제할 때도 남은 항목들의 번호는 그대로 두고(다시 매기지 않고) 그 줄만 뺀다.
+      persistQuotes(sermon.quotes.filter((q) => q.id !== id));
       return;
     }
     persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, text: value } : q)));
@@ -1010,13 +994,13 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     reader.readAsArrayBuffer(file);
   };
 
-  const filteredQuotes = [...sermon.quotes]
+  const filteredQuotes = sermon.quotes
     .filter((q) => {
       const query = quoteSearchQuery.trim().toLowerCase();
       if (!query) return true;
       return q.text.toLowerCase().includes(query) || String(q.number).includes(query);
-    })
-    .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+    });
+    // 번호로 다시 정렬하지 않는다 — 목록 순서는 저장된 순서(줄) 그대로 유지한다.
 
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
@@ -1196,7 +1180,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                     취소
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onSnapshotUndo(); persistQuotes(renumberQuotes(sermon.quotes.filter((x) => x.id !== q.id))); }}
+                    onClick={(e) => { e.stopPropagation(); onSnapshotUndo(); persistQuotes(sermon.quotes.filter((x) => x.id !== q.id)); }}
                     style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 12 }}
                   >
                     삭제
