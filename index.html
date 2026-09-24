@@ -370,6 +370,7 @@ function SwipeRow({ onNavigate, content, actions, actionWidth = 132, gap = 10, b
 function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUndo, undo, undoCount }) {
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
+  const [splitByLine, setSplitByLine] = useState(true);
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
   const quoteRowRefs = useRef({});
   const fileInputRef = useRef(null);
@@ -483,6 +484,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   };
 
   const handleNewQuotePaste = (e) => {
+    if (!splitByLine) return; // 줄나눔이 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
     const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
     if (!pasted || !pasted.includes("\n")) return; // 한 줄짜리는 기본 붙여넣기 그대로 둔다
     e.preventDefault();
@@ -642,14 +644,25 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
         <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #262c37" }}>
           <div style={{ fontSize: 12.5, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <input
-              value={newQuoteNumber}
-              onChange={(e) => setNewQuoteNumber(e.target.value)}
-              placeholder="번호"
-              inputMode="numeric"
-              className="field"
-              style={{ width: 46, flexShrink: 0, fontSize: 16, textAlign: "center", padding: "6px 2px" }}
-            />
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
+              <input
+                value={newQuoteNumber}
+                onChange={(e) => setNewQuoteNumber(e.target.value)}
+                placeholder="번호"
+                inputMode="numeric"
+                className="field"
+                style={{ width: 46, fontSize: 16, textAlign: "center", padding: "6px 2px" }}
+              />
+              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={splitByLine}
+                  onChange={(e) => setSplitByLine(e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: "#c9974a" }}
+                />
+                <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>줄나눔</span>
+              </label>
+            </div>
             <textarea
               value={newQuoteText}
               onChange={(e) => setNewQuoteText(e.target.value)}
@@ -757,6 +770,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
 function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onSnapshotUndo, undo, undoCount }) {
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
+  const [splitByLine, setSplitByLine] = useState(true);
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
   const quoteRowRefs = useRef({});
   const fileInputRef = useRef(null);
@@ -868,6 +882,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   };
 
   const handleNewQuotePaste = (e) => {
+    if (!splitByLine) return; // 줄나눔이 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
     const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
     if (!pasted || !pasted.includes("\n")) return;
     e.preventDefault();
@@ -1102,14 +1117,25 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
         <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #262c37" }}>
           <div style={{ fontSize: 13.5, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <input
-              value={newQuoteNumber}
-              onChange={(e) => setNewQuoteNumber(e.target.value)}
-              placeholder="번호"
-              inputMode="numeric"
-              className="field"
-              style={{ width: 48, flexShrink: 0, fontSize: 17, textAlign: "center", padding: "6px 2px" }}
-            />
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
+              <input
+                value={newQuoteNumber}
+                onChange={(e) => setNewQuoteNumber(e.target.value)}
+                placeholder="번호"
+                inputMode="numeric"
+                className="field"
+                style={{ width: 48, fontSize: 17, textAlign: "center", padding: "6px 2px" }}
+              />
+              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={splitByLine}
+                  onChange={(e) => setSplitByLine(e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: "#c9974a" }}
+                />
+                <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>줄나눔</span>
+              </label>
+            </div>
             <textarea
               value={newQuoteText}
               onChange={(e) => setNewQuoteText(e.target.value)}
