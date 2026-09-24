@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>독서요약집</title>
+<title>독서핵심모음집</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="독서요약집" />
+<meta name="apple-mobile-web-app-title" content="독서핵심모음집" />
 <meta name="theme-color" content="#12151b" />
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -1493,6 +1493,62 @@ function App() {
     setUndoCount(0);
   }, [mainSection, mainView, quoteSetView, sermonView]);
 
+  // 폰을 바꿔도 내용을 그대로 옮길 수 있도록, 앱 전체 데이터를 파일 하나로 백업/복원한다.
+  // (브라우저 저장소는 이 기기에만 있어서, 새 기기에서는 이 백업 파일로 불러와야 한다.)
+  const fullBackupFileInputRef = useRef(null);
+  const exportFullBackup = () => {
+    const payload = {
+      kind: "reading-summary-full-backup",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      books,
+      quoteSets,
+      sermons,
+      deletedSermonDates,
+      sectionLabels,
+      bookmarkedBookId,
+      bookmarkedQuoteSetId,
+      bookmarkedSermonId,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${sanitizeFileName(sectionLabels.reading || "독서핵심모음집")}_전체백업(${yymmdd()}).json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+  const importFullBackup = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = JSON.parse(evt.target.result);
+        if (data.kind !== "reading-summary-full-backup") {
+          alert("이 앱의 백업 파일이 아니에요.");
+          return;
+        }
+        if (!confirm("지금 있는 모든 내용을 이 백업 파일 내용으로 덮어씁니다. 계속할까요?")) return;
+        setBooks(Array.isArray(data.books) ? data.books : []);
+        setQuoteSets(Array.isArray(data.quoteSets) ? data.quoteSets : []);
+        setSermons(Array.isArray(data.sermons) ? data.sermons : []);
+        setDeletedSermonDates(Array.isArray(data.deletedSermonDates) ? data.deletedSermonDates : []);
+        if (data.sectionLabels) setSectionLabels((prev) => ({ ...prev, ...data.sectionLabels }));
+        setBookmarkedBookId(data.bookmarkedBookId || null);
+        setBookmarkedQuoteSetId(data.bookmarkedQuoteSetId || null);
+        setBookmarkedSermonId(data.bookmarkedSermonId || null);
+        alert("백업 내용을 불러왔어요.");
+      } catch (err) {
+        alert("백업 파일을 읽지 못했어요: " + (err.message || err));
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // 화면을 열어두고 5분간 움직임(터치/입력 등)이 없으면 화면을 어둡게 꺼서 보여준다.
   // (웹앱은 기기의 실제 화면 밝기/잠금을 직접 끌 수는 없어서, 앱 내용을 검게 가려 "꺼진 것처럼" 만든다.
   //  아무 곳이나 다시 터치하면 켜진다.)
@@ -1513,6 +1569,32 @@ function App() {
       if (timer) clearTimeout(timer);
     };
   }, []);
+
+  // 홈 화면 대제목이 화면 폭에 맞춰 딱 한 줄로 꽉 차도록, 캔버스로 실제 글자 폭을 재서 크기를 계산한다.
+  const homeTitleRef = useRef(null);
+  const [homeTitleSize, setHomeTitleSize] = useState(28);
+  useEffect(() => {
+    const el = homeTitleRef.current;
+    if (!el || mainSection !== "home") return;
+    const BASE = 100; // 측정 기준 크기(크게 잡아야 오차가 덜하다)
+    const SAFETY = 0.94; // 폰트 로딩/렌더링 오차에 대비한 여유분
+    const measure = () => {
+      const parent = el.parentElement;
+      if (!parent) return;
+      const available = parent.clientWidth;
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      ctx.font = `800 ${BASE}px 'Pretendard','Apple SD Gothic Neo',sans-serif`;
+      const textWidth = ctx.measureText(el.textContent).width;
+      if (textWidth > 0 && available > 0) {
+        setHomeTitleSize(Math.floor(BASE * (available / textWidth) * SAFETY));
+      }
+    };
+    measure();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure);
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [mainSection, sectionLabels]);
 
   const currentBook = books.find((b) => b.id === currentBookId) || null;
   const currentQuoteSet = quoteSets.find((b) => b.id === currentQuoteSetId) || null;
@@ -1601,7 +1683,7 @@ function App() {
           .iconbtn { background:none; border:none; cursor:pointer; }
         `}</style>
         <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-          <div style={{ fontSize: 54, fontWeight: 800, marginBottom: 4 }}>📚 독서요약집</div>
+          <div ref={homeTitleRef} style={{ fontSize: homeTitleSize, fontWeight: 800, marginBottom: 4, whiteSpace: "nowrap", display: "inline-block" }}>📚 독서핵심모음집</div>
           <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>아래에서 메뉴를 선택하세요.</div>
 
           <div
@@ -1644,6 +1726,29 @@ function App() {
               </div>
             </div>
             <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
+          </div>
+
+          <div style={{ marginTop: 22, paddingTop: 16, borderTop: "1px solid #262c37" }}>
+            <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>
+              폰을 바꾸실 땐, 바꾸기 전에 여기서 백업하고 새 폰에서 복원해주세요.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="file" accept="application/json" ref={fullBackupFileInputRef} onChange={importFullBackup} style={{ display: "none" }} />
+              <button
+                onClick={exportFullBackup}
+                className="iconbtn"
+                style={{ flex: 1, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 13, borderRadius: 10, padding: "10px 0" }}
+              >
+                💾 전체 백업
+              </button>
+              <button
+                onClick={() => fullBackupFileInputRef.current && fullBackupFileInputRef.current.click()}
+                className="iconbtn"
+                style={{ flex: 1, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 13, borderRadius: 10, padding: "10px 0" }}
+              >
+                📂 전체 복원
+              </button>
+            </div>
           </div>
         </div>
       </div>
