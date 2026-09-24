@@ -1778,9 +1778,14 @@ function App() {
   const addQuoteSet = () => {
     const trimmed = newQuoteSetTitle.trim();
     if (!trimmed) return;
-    const set = { id: genId(), title: trimmed, learnedCount: 0, bookmarkQuoteId: null, readDate: new Date().toISOString().slice(0, 10), quotes: [] };
+    const maxNum = quoteSets.reduce((m, s) => Math.max(m, num(s.number) || 0), 0);
+    const set = { id: genId(), number: maxNum + 1, title: trimmed, learnedCount: 0, bookmarkQuoteId: null, readDate: new Date().toISOString().slice(0, 10), quotes: [] };
     setQuoteSets((prev) => [...prev, set]);
     setNewQuoteSetTitle("");
+  };
+
+  const updateQuoteSetNumber = (id, value) => {
+    setQuoteSets((prev) => prev.map((s) => (s.id === id ? { ...s, number: value.trim() === "" ? value : num(value) } : s)));
   };
 
   const deleteQuoteSet = (id) => {
@@ -1977,18 +1982,18 @@ function App() {
                 if (!q) return true;
                 return (b.title || "").toLowerCase().includes(q) || b.quotes.some((qq) => qq.text.toLowerCase().includes(q));
               })
-              .sort((a, b) => {
-                const da = a.readDate || "";
-                const db = b.readDate || "";
-                if (!da && !db) return 0;
-                if (!da) return 1;
-                if (!db) return -1;
-                return db.localeCompare(da);
-              })
-              .map((b, idx) => (
+              // 번호를 수정하면 그 번호 순서대로 자동 정렬된다.
+              .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
+              .map((b) => (
               <div key={b.id} ref={(el) => { if (el) quoteSetListRowRefs.current[b.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 10 }}>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0, paddingTop: 2 }}>
-                  <div className="field" style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}>{idx + 1}</div>
+                  <input
+                    value={b.number}
+                    onChange={(e) => updateQuoteSetNumber(b.id, e.target.value)}
+                    inputMode="numeric"
+                    className="field"
+                    style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
+                  />
                   <button type="button" onClick={() => toggleBookmarkedQuoteSet(b.id)} style={{ width: 22, height: 22, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <svg width="15" height="19" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
                       <path d="M1 1h14v18l-7-5-7 5V1z" fill={bookmarkedQuoteSetId === b.id ? "#c9974a" : "#3a4150"} stroke={bookmarkedQuoteSetId === b.id ? "#c9974a" : "#5a6274"} strokeWidth="1" strokeLinejoin="round" />
@@ -2031,24 +2036,16 @@ function App() {
             ))}
 
             <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 명언 제목을 입력하고 추가하세요</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  value={newQuoteSetTitle}
-                  onChange={(e) => setNewQuoteSetTitle(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") addQuoteSet(); }}
-                  placeholder="새 명언 제목 (예: 인생명언)"
-                  className="field"
-                  style={{ flex: 1, fontSize: 14, padding: "10px 12px" }}
-                />
-                <button
-                  onClick={addQuoteSet}
-                  className="iconbtn"
-                  style={{ border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, fontSize: 13, borderRadius: 10, padding: "0 16px", whiteSpace: "nowrap" }}
-                >
-                  + 추가
-                </button>
-              </div>
+              <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 명언 제목을 입력하고 완료(엔터)를 누르면 바로 추가돼요</div>
+              <input
+                value={newQuoteSetTitle}
+                onChange={(e) => setNewQuoteSetTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.target.blur(); addQuoteSet(); } }}
+                onBlur={addQuoteSet}
+                placeholder="새 명언 제목 (예: 인생명언)"
+                className="field"
+                style={{ width: "100%", fontSize: 14, padding: "10px 12px" }}
+              />
             </div>
           </div>
           </div>
