@@ -458,6 +458,14 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     setNewQuoteText("");
   };
 
+  // 삭제할 때 화면이 튀지 않도록, 삭제 직후 스크롤 위치를 원래 자리로 고정한다.
+  const deleteQuoteById = (id) => {
+    const scrollY = window.scrollY;
+    persistQuotes(book.quotes.filter((q) => q.id !== id));
+    const restore = () => window.scrollTo(0, scrollY);
+    requestAnimationFrame(() => { restore(); requestAnimationFrame(restore); });
+  };
+
   const updateQuoteNumber = (id, value) => {
     // 번호를 바꿔도 목록에서의 위치(줄)는 그대로 두고, 그 항목의 번호 표시만 바꾼다.
     persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, number: value.trim() === "" ? value : num(value) } : q)));
@@ -467,7 +475,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     if (value.trim() === "") {
       onSnapshotUndo();
       // 지워서 삭제할 때도 남은 항목들의 번호는 그대로 두고(다시 매기지 않고) 그 줄만 뺀다.
-      persistQuotes(book.quotes.filter((q) => q.id !== id));
+      deleteQuoteById(id);
       return;
     }
     persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, text: value } : q)));
@@ -806,7 +814,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                     취소
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onSnapshotUndo(); persistQuotes(book.quotes.filter((x) => x.id !== q.id)); }}
+                    onClick={(e) => { e.stopPropagation(); onSnapshotUndo(); deleteQuoteById(q.id); }}
                     style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 12 }}
                   >
                     삭제
@@ -876,6 +884,14 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     setNewQuoteText("");
   };
 
+  // 삭제할 때 화면이 튀지 않도록, 삭제 직후 스크롤 위치를 원래 자리로 고정한다.
+  const deleteQuoteById = (id) => {
+    const scrollY = window.scrollY;
+    persistQuotes(sermon.quotes.filter((q) => q.id !== id));
+    const restore = () => window.scrollTo(0, scrollY);
+    requestAnimationFrame(() => { restore(); requestAnimationFrame(restore); });
+  };
+
   const updateQuoteNumber = (id, value) => {
     // 번호를 바꿔도 목록에서의 위치(줄)는 그대로 두고, 그 항목의 번호 표시만 바꾼다.
     persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, number: value.trim() === "" ? value : num(value) } : q)));
@@ -885,7 +901,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     if (value.trim() === "") {
       onSnapshotUndo();
       // 지워서 삭제할 때도 남은 항목들의 번호는 그대로 두고(다시 매기지 않고) 그 줄만 뺀다.
-      persistQuotes(sermon.quotes.filter((q) => q.id !== id));
+      deleteQuoteById(id);
       return;
     }
     persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, text: value } : q)));
@@ -1269,7 +1285,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                     취소
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onSnapshotUndo(); persistQuotes(sermon.quotes.filter((x) => x.id !== q.id)); }}
+                    onClick={(e) => { e.stopPropagation(); onSnapshotUndo(); deleteQuoteById(q.id); }}
                     style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 12 }}
                   >
                     삭제
