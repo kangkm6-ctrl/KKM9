@@ -85,19 +85,20 @@ const parseHierNumber = (raw) => {
 };
 
 // 아이폰 메모 앱과 주고받기 위한 순수 텍스트 변환 (메모 앱은 별도 API가 없어서,
-// 공유시트/복사-붙여넣기를 매개로 삼는다). 본문이 "1-1" 같은 하위번호나 대시("-")로 시작하면
-// 새 상위번호를 매기지 않고 그 모양 그대로 들여써서, 바로 위의 상위 항목의 하위로 함께 보이게 한다.
+// 공유시트/복사-붙여넣기를 매개로 삼는다). 메모 앱의 번호 목록/하위 목록 형식에 맞춰,
+// 번호는 줄 맨 앞에 "1. "로, 하위 항목은 탭(Tab)으로 들여써서 내보낸다 — 메모 앱은 탭으로
+// 들여쓴 번호줄을 하위 목록으로 자동 인식한다. 항목 사이에 빈 줄도 넣지 않아 한 목록으로 이어지게 한다.
 const buildQuotesPlainText = (title, quotes) => {
   const sorted = [...quotes].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
   let topCounter = 0;
   const lines = sorted.map((q) => {
     const hier = parseHierNumber(q.text);
-    if (hier) return `   ${hier.label}. ${hier.text}`;
-    if (/^[-–—]\s*\S/.test(q.text)) return `   ${q.text}`;
+    if (hier) return `\t${hier.label}. ${hier.text}`;
+    if (/^[-–—]\s*\S/.test(q.text)) return `\t${q.text}`;
     topCounter += 1;
     return `${topCounter}. ${q.text}`;
   });
-  return `${title || "제목 없음"}\n\n${lines.join("\n\n")}`;
+  return `${title || "제목 없음"}\n\n${lines.join("\n")}`;
 };
 const parseQuotesFromPlainText = (text) => {
   const rawLines = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line);
