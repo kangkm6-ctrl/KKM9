@@ -468,6 +468,25 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   };
 
   const updateQuoteNumber = (id, value) => {
+    // "1+2+3"처럼 +로 여러 번호를 적으면, 그 번호들의 내용을 순서대로 합쳐서 맨 앞 번호(예: 1) 하나로 만든다.
+    if (value.includes("+")) {
+      const parts = value.split("+").map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        const targets = parts.map((p) => book.quotes.find((q) => String(q.number) === p)).filter(Boolean);
+        if (targets.length > 1) {
+          onSnapshotUndo();
+          const mergedText = targets.map((q) => q.text).join("\n");
+          const keepId = targets[0].id;
+          const mergedNumber = targets[0].number;
+          const removeIds = new Set(targets.slice(1).map((q) => q.id));
+          const next = book.quotes
+            .filter((q) => !removeIds.has(q.id))
+            .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber } : q));
+          persistQuotes(next);
+          return;
+        }
+      }
+    }
     // 번호를 바꿔도 목록에서의 위치(줄)는 그대로 두고, 그 항목의 번호 표시만 바꾼다.
     persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, number: value.trim() === "" ? value : num(value) } : q)));
   };
@@ -682,17 +701,24 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
           />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-              <span style={{ fontSize: 12, color: "#8993a6" }}>읽은날짜</span>
+              <span style={{ fontSize: 14.5, color: "#8993a6" }}>읽은날짜</span>
               <input
                 type="date"
                 value={book.readDate || ""}
                 onChange={(e) => onUpdateBook({ ...book, readDate: e.target.value })}
                 className="field"
-                style={{ width: 132, fontSize: 13, fontWeight: 700, color: "#c9974a", padding: "5px 4px" }}
+                style={{ width: 132, fontSize: 15.5, fontWeight: 700, color: "#c9974a", padding: "5px 4px" }}
               />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
               <span style={{ fontSize: 12, color: "#8993a6" }}>익힘</span>
+              <button
+                type="button"
+                onClick={() => setLearnedCount((num(book.learnedCount) || 0) + 1)}
+                style={{ width: 22, height: 22, border: "1px solid #262c37", borderRadius: 6, background: "#1a1f28", color: "#c9974a", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: 0, lineHeight: 1 }}
+              >
+                +
+              </button>
               <input
                 value={book.learnedCount || 0}
                 onChange={(e) => setLearnedCount(e.target.value)}
@@ -894,6 +920,25 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   };
 
   const updateQuoteNumber = (id, value) => {
+    // "1+2+3"처럼 +로 여러 번호를 적으면, 그 번호들의 내용을 순서대로 합쳐서 맨 앞 번호(예: 1) 하나로 만든다.
+    if (value.includes("+")) {
+      const parts = value.split("+").map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        const targets = parts.map((p) => sermon.quotes.find((q) => String(q.number) === p)).filter(Boolean);
+        if (targets.length > 1) {
+          onSnapshotUndo();
+          const mergedText = targets.map((q) => q.text).join("\n");
+          const keepId = targets[0].id;
+          const mergedNumber = targets[0].number;
+          const removeIds = new Set(targets.slice(1).map((q) => q.id));
+          const next = sermon.quotes
+            .filter((q) => !removeIds.has(q.id))
+            .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber } : q));
+          persistQuotes(next);
+          return;
+        }
+      }
+    }
     // 번호를 바꿔도 목록에서의 위치(줄)는 그대로 두고, 그 항목의 번호 표시만 바꾼다.
     persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, number: value.trim() === "" ? value : num(value) } : q)));
   };
@@ -1193,6 +1238,13 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
             <span style={{ fontSize: 13, color: "#8993a6" }}>익힘</span>
+            <button
+              type="button"
+              onClick={() => setLearnedCount((num(sermon.learnedCount) || 0) + 1)}
+              style={{ width: 24, height: 24, border: "1px solid #262c37", borderRadius: 6, background: "#1a1f28", color: "#c9974a", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: 0, lineHeight: 1 }}
+            >
+              +
+            </button>
             <input
               value={sermon.learnedCount || 0}
               onChange={(e) => setLearnedCount(e.target.value)}
