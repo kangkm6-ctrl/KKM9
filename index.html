@@ -758,7 +758,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
               onChange={(e) => setNewQuoteText(e.target.value)}
               onBlur={addQuote}
               onPaste={handleNewQuotePaste}
-              placeholder="내용을 입력하거나 붙여넣으세요 (메모에서 여러 줄을 붙여넣으면 자동으로 나뉘어 들어가요)"
+              placeholder="내용 입력 (“번호나눔” 체크시 번호별 여러개의 주요문 / 해제시 전체를 하나의 주요문)"
               className="field"
               rows={3}
               style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
@@ -766,7 +766,6 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
           </div>
         </div>
 
-        <div style={{ fontSize: 12, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
 
         <input
           value={quoteSearchQuery}
@@ -1283,7 +1282,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
               onChange={(e) => setNewQuoteText(e.target.value)}
               onBlur={addQuote}
               onPaste={handleNewQuotePaste}
-              placeholder="내용을 입력하거나 붙여넣으세요 (메모에서 여러 줄을 붙여넣으면 자동으로 나뉘어 들어가요)"
+              placeholder="내용 입력 (“번호나눔” 체크시 번호별 여러개의 주요문 / 해제시 전체를 하나의 주요문)"
               className="field"
               rows={3}
               style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
@@ -1291,7 +1290,6 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           </div>
         </div>
 
-        <div style={{ fontSize: 13, color: "#5a6274", marginBottom: 10 }}>내용을 지워서 비우면 그 항목이 삭제되고 번호가 다시 매겨져요</div>
 
         {filteredQuotes.map((q) => (
           <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }}>
