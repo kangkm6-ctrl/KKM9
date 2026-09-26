@@ -176,6 +176,47 @@ const parseQuotesByNumberBlocks = (text) => {
     .map((b) => b.text);
 };
 
+// "번호통합": 상위번호(예: 1, 1-1, 1-2)가 같은 줄들을 전부 하나의 주요문으로 합친다.
+// 번호나눔과 달리 "1-1", "1-2" 같은 하위번호도 별도 항목이 되지 않고 "1"에 합쳐지며,
+// 각 줄의 내용(원래 적힌 그대로)은 줄바꿈으로 이어붙여 그대로 보존한다.
+const mergeQuotesByMajorNumber = (text) => {
+  const rawLines = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line);
+  const groups = new Map(); // 상위번호(또는 번호없음 키) -> { lines, order }
+  let currentMajor = null;
+  let noneIdx = 0;
+  rawLines.forEach((line, idx) => {
+    const hier = parseHierNumber(line);
+    if (hier) {
+      currentMajor = hier.major;
+      if (!groups.has(hier.major)) groups.set(hier.major, { lines: [], order: idx });
+      groups.get(hier.major).lines.push(`${hier.label}. ${hier.text}`);
+      return;
+    }
+    const { leadingNumber, text: stripped } = splitLeadingNumber(line);
+    if (leadingNumber != null) {
+      currentMajor = leadingNumber;
+      if (!groups.has(leadingNumber)) groups.set(leadingNumber, { lines: [], order: idx });
+      groups.get(leadingNumber).lines.push(stripped);
+      return;
+    }
+    // 번호 없는 줄(대시줄 포함): 지금까지 나온 상위번호 그룹에 그대로 이어붙인다.
+    if (currentMajor != null) {
+      groups.get(currentMajor).lines.push(line);
+    } else {
+      groups.set(`__none_${noneIdx++}`, { lines: [line], order: idx });
+    }
+  });
+  return Array.from(groups.entries())
+    .sort((a, b) => {
+      const av = typeof a[0] === "number" ? a[0] : Infinity;
+      const bv = typeof b[0] === "number" ? b[0] : Infinity;
+      if (av !== bv) return av - bv;
+      return a[1].order - b[1].order;
+    })
+    .map(([, g]) => g.lines.join("\n"))
+    .filter((t) => t);
+};
+
 const buildQuotesWorkbook = (title, quotes) => {
   const rows = [...quotes]
     .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
@@ -409,8 +450,26 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
   const [splitByNumber, setSplitByNumber] = useState(false);
+  const [mergeByMajor, setMergeByMajor] = useState(false);
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
   const quoteRowRefs = useRef({});
+  const pendingScrollIdRef = useRef(null);
+
+  // 이 화면에 새로 들어올 때는 항상 맨 위(1번)부터 보이게 스크롤을 초기화한다.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  // 방금 추가한 주요문이 있으면, 화면에 그 줄이 나타나자마자 그 위치로 스크롤해서 보여준다.
+  useEffect(() => {
+    if (pendingScrollIdRef.current) {
+      const node = quoteRowRefs.current[pendingScrollIdRef.current];
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        pendingScrollIdRef.current = null;
+      }
+    }
+  });
   const fileInputRef = useRef(null);
 
   const persistQuotes = (next) => onUpdateBook({ ...book, quotes: next });
@@ -425,7 +484,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     if (!text) return;
     // 번호나눔이 켜져 있으면 번호 블록 단위로(다음 번호 전까지 한 개), 줄나눔이 켜져 있으면
     // 한 줄씩, 붙여넣기와 똑같은 방식으로 나눠서 주요문을 만든다.
-    const splitParser = splitByNumber ? parseQuotesByNumberBlocks : null;
+    const splitParser = mergeByMajor ? mergeQuotesByMajorNumber : (splitByNumber ? parseQuotesByNumberBlocks : null);
     if (splitParser && raw.includes("\n")) {
       const parsed = splitParser(raw);
       if (parsed.length > 1) {
@@ -439,6 +498,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
         const skipped = parsed.length - uniqueImported.length;
         if (uniqueImported.length > 0) {
           persistQuotes([...book.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 })));
+          pendingScrollIdRef.current = uniqueImported[uniqueImported.length - 1].id;
         }
         setNewQuoteNumber("");
         setNewQuoteText("");
@@ -454,7 +514,9 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     }
     const maxNum = book.quotes.reduce((m, q) => Math.max(m, num(q.number) || 0), 0);
     const number = newQuoteNumber.trim() ? num(newQuoteNumber) : maxNum + 1;
-    persistQuotes([...book.quotes, { id: genId(), number, text }]);
+    const newId = genId();
+    persistQuotes([...book.quotes, { id: newId, number, text }]);
+    pendingScrollIdRef.current = newId;
     setNewQuoteNumber("");
     setNewQuoteText("");
   };
@@ -467,26 +529,42 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     requestAnimationFrame(() => { restore(); requestAnimationFrame(restore); });
   };
 
-  const updateQuoteNumber = (id, value) => {
-    // "1+2+3"처럼 +로 여러 번호를 적으면, 그 번호들의 내용을 순서대로 합쳐서 맨 앞 번호(예: 1) 하나로 만든다.
-    if (value.includes("+")) {
-      const parts = value.split("+").map((s) => s.trim()).filter(Boolean);
-      if (parts.length > 1) {
-        const targets = parts.map((p) => book.quotes.find((q) => String(q.number) === p)).filter(Boolean);
-        if (targets.length > 1) {
-          onSnapshotUndo();
-          const mergedText = targets.map((q) => q.text).join("\n");
-          const keepId = targets[0].id;
-          const mergedNumber = targets[0].number;
-          const removeIds = new Set(targets.slice(1).map((q) => q.id));
-          const next = book.quotes
-            .filter((q) => !removeIds.has(q.id))
-            .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber } : q));
-          persistQuotes(next);
-          return;
-        }
-      }
+  // "1+2+3"처럼 +로 여러 번호를 적거나, "1*5"처럼 *로 범위를 적으면, 그 번호들의 내용을
+  // 순서대로 합쳐서 맨 앞 번호 하나로 만든다. 기존 항목의 번호칸, 그리고(번호통합 체크 시)
+  // 새 주요문 추가란의 번호칸 양쪽에서 공통으로 쓴다.
+  const mergeQuoteTargets = (targets) => {
+    if (targets.length <= 1) return false;
+    onSnapshotUndo();
+    const mergedText = targets.map((q) => q.text).join("\n");
+    const keepId = targets[0].id;
+    const mergedNumber = targets[0].number;
+    const removeIds = new Set(targets.slice(1).map((q) => q.id));
+    const next = book.quotes
+      .filter((q) => !removeIds.has(q.id))
+      .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber } : q));
+    persistQuotes(next);
+    return true;
+  };
+  const tryMergeByNumberExpression = (value) => {
+    if (value.includes("*")) {
+      const [startRaw, endRaw] = value.split("*").map((s) => s.trim());
+      if (!startRaw || !endRaw) return false;
+      const lo = Math.min(num(startRaw), num(endRaw));
+      const hi = Math.max(num(startRaw), num(endRaw));
+      const targets = book.quotes
+        .filter((q) => { const n = num(q.number); return n >= lo && n <= hi; })
+        .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+      return mergeQuoteTargets(targets);
     }
+    if (!value.includes("+")) return false;
+    const parts = value.split("+").map((s) => s.trim()).filter(Boolean);
+    if (parts.length <= 1) return false;
+    const targets = parts.map((p) => book.quotes.find((q) => String(q.number) === p)).filter(Boolean);
+    return mergeQuoteTargets(targets);
+  };
+
+  const updateQuoteNumber = (id, value) => {
+    if (tryMergeByNumberExpression(value)) return;
     // 번호를 바꿔도 목록에서의 위치(줄)는 그대로 두고, 그 항목의 번호 표시만 바꾼다.
     persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, number: value.trim() === "" ? value : num(value) } : q)));
   };
@@ -543,7 +621,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
       title = lines[0].trim();
       bodyText = lines.slice(2).join("\n");
     }
-    const splitParser = parseQuotesByNumberBlocks;
+    const splitParser = mergeByMajor ? mergeQuotesByMajorNumber : parseQuotesByNumberBlocks;
     const parsed = splitParser(bodyText);
     if (parsed.length === 0) return false;
     const acceptedTexts = book.quotes.map((q) => q.text);
@@ -566,7 +644,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   };
 
   const handleNewQuotePaste = (e) => {
-    if (!splitByNumber) return; // 번호나눔이 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
+    if (!splitByNumber && !mergeByMajor) return; // 둘 다 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
     const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
     if (!pasted || !pasted.includes("\n")) return; // 한 줄짜리는 기본 붙여넣기 그대로 둔다
     e.preventDefault();
@@ -587,7 +665,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     const title = lines[firstIdx].trim();
     let bodyLines = lines.slice(firstIdx + 1);
     if (bodyLines[0] !== undefined && bodyLines[0].trim() === "") bodyLines = bodyLines.slice(1);
-    const splitParser = parseQuotesByNumberBlocks;
+    const splitParser = mergeByMajor ? mergeQuotesByMajorNumber : parseQuotesByNumberBlocks;
     const parsed = splitParser(bodyLines.join("\n"));
     const acceptedTexts = book.quotes.map((q) => q.text);
     const uniqueImported = [];
@@ -666,7 +744,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
 
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
-      <div style={{ padding: "0 10px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+      <div style={{ padding: "0 10px 6px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
         <button onClick={onBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
         <div style={{ display: "flex", gap: 6 }}>
           <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImportFile} style={{ display: "none" }} />
@@ -688,18 +766,17 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
             ↺{undoCount > 0 ? ` ${undoCount}` : ""}
           </button>
         </div>
-      </div>
-      <div style={{ padding: "0 8px 40px" }}>
-        <div style={{ marginBottom: 16 }}>
+
+        <div style={{ marginBottom: 6 }}>
           <input
             value={titleDraft}
             onChange={(e) => setTitleDraft(e.target.value)}
             onBlur={() => onRenameBook(titleDraft.trim() || "(제목 없음)")}
             onPaste={handleTitlePaste}
             placeholder="책 제목"
-            style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontSize: 27, fontWeight: 800, color: "#e7eaf0", lineHeight: 1.4, padding: 0, marginBottom: 10 }}
+            style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontSize: 27, fontWeight: 800, color: "#e7eaf0", lineHeight: 1.4, padding: 0, marginBottom: 4 }}
           />
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
               <span style={{ fontSize: 14.5, color: "#8993a6" }}>읽은날짜</span>
               <input
@@ -709,6 +786,16 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                 className="field"
                 style={{ width: 132, fontSize: 15.5, fontWeight: 700, color: "#c9974a", padding: "5px 4px" }}
               />
+              {book.readDate && (
+                <button
+                  type="button"
+                  onClick={() => onUpdateBook({ ...book, readDate: "" })}
+                  title="읽은날짜 지우기"
+                  style={{ width: 22, height: 22, border: "1px solid #262c37", borderRadius: 6, background: "#1a1f28", color: "#8993a6", fontSize: 13, fontWeight: 700, cursor: "pointer", padding: 0, lineHeight: 1 }}
+                >
+                  ×
+                </button>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
               <span style={{ fontSize: 12, color: "#8993a6" }}>익힘</span>
@@ -730,16 +817,30 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
             </div>
           </div>
         </div>
-
-        <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #262c37" }}>
-          <div style={{ fontSize: 12.5, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <div style={{ marginBottom: 0, paddingTop: 6, borderTop: "1px solid #262c37", width: "100%" }}>
+          <div style={{ fontSize: 11, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
+          {splitByNumber && (
+            <div style={{ fontSize: 10.5, color: "#c9974a", marginBottom: 4 }}>
+              번호가 나온 줄부터 다음 번호 나오기 전까지를 한 개로 묶어서, 여러 개의 주요문으로 나눠 추가해요
+            </div>
+          )}
+          {mergeByMajor && (
+            <div style={{ fontSize: 10.5, color: "#c9974a", marginBottom: 4 }}>
+              번호칸에 "1+2+3" → 1·2·3번을 순서대로 합쳐 1번으로 · "1*5" → 1~5번 범위를 합쳐 1번으로
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
               <input
                 value={newQuoteNumber}
                 onChange={(e) => setNewQuoteNumber(e.target.value)}
+                onBlur={() => {
+                  if (mergeByMajor && (newQuoteNumber.includes("+") || newQuoteNumber.includes("*")) && tryMergeByNumberExpression(newQuoteNumber)) {
+                    setNewQuoteNumber("");
+                  }
+                }}
                 placeholder="번호"
-                inputMode="numeric"
+                inputMode={mergeByMajor ? "tel" : "numeric"}
                 className="field"
                 style={{ width: 46, fontSize: 16, textAlign: "center", padding: "6px 2px" }}
               />
@@ -747,10 +848,19 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                 <input
                   type="checkbox"
                   checked={splitByNumber}
-                  onChange={(e) => setSplitByNumber(e.target.checked)}
+                  onChange={(e) => { setSplitByNumber(e.target.checked); if (e.target.checked) setMergeByMajor(false); }}
                   style={{ width: 16, height: 16, accentColor: "#c9974a" }}
                 />
                 <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", marginTop: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={mergeByMajor}
+                  onChange={(e) => { setMergeByMajor(e.target.checked); if (e.target.checked) setSplitByNumber(false); }}
+                  style={{ width: 16, height: 16, accentColor: "#c9974a" }}
+                />
+                <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호통합</span>
               </label>
             </div>
             <textarea
@@ -758,15 +868,16 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
               onChange={(e) => setNewQuoteText(e.target.value)}
               onBlur={addQuote}
               onPaste={handleNewQuotePaste}
-              placeholder="내용 입력 (“번호나눔” 체크시 번호별 여러개의 주요문 / 해제시 전체를 하나의 주요문)"
+              placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
               className="field"
-              rows={3}
+              rows={2}
               style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
             />
           </div>
         </div>
 
-
+      </div>
+      <div style={{ padding: "0 8px 40px" }}>
         <input
           value={quoteSearchQuery}
           onChange={(e) => setQuoteSearchQuery(e.target.value)}
@@ -803,7 +914,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                     <input
                       value={q.number}
                       onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
-                      inputMode="numeric"
+                      inputMode={mergeByMajor ? "tel" : "numeric"}
                       className="field"
                       style={{ width: 32, fontSize: 14, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
                     />
@@ -860,8 +971,26 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
   const [splitByNumber, setSplitByNumber] = useState(false);
+  const [mergeByMajor, setMergeByMajor] = useState(false);
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
   const quoteRowRefs = useRef({});
+  const pendingScrollIdRef = useRef(null);
+
+  // 이 화면에 새로 들어올 때는 항상 맨 위(1번)부터 보이게 스크롤을 초기화한다.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  // 방금 추가한 주요문이 있으면, 화면에 그 줄이 나타나자마자 그 위치로 스크롤해서 보여준다.
+  useEffect(() => {
+    if (pendingScrollIdRef.current) {
+      const node = quoteRowRefs.current[pendingScrollIdRef.current];
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        pendingScrollIdRef.current = null;
+      }
+    }
+  });
   const fileInputRef = useRef(null);
 
   const persistQuotes = (next) => onUpdateSermon({ ...sermon, quotes: next });
@@ -876,7 +1005,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     if (!text) return;
     // 번호나눔이 켜져 있으면 번호 블록 단위로(다음 번호 전까지 한 개), 줄나눔이 켜져 있으면
     // 한 줄씩, 붙여넣기와 똑같은 방식으로 나눠서 주요문을 만든다.
-    const splitParser = splitByNumber ? parseQuotesByNumberBlocks : null;
+    const splitParser = mergeByMajor ? mergeQuotesByMajorNumber : (splitByNumber ? parseQuotesByNumberBlocks : null);
     if (splitParser && raw.includes("\n")) {
       const parsed = splitParser(raw);
       if (parsed.length > 1) {
@@ -890,6 +1019,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
         const skipped = parsed.length - uniqueImported.length;
         if (uniqueImported.length > 0) {
           persistQuotes([...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 })));
+          pendingScrollIdRef.current = uniqueImported[uniqueImported.length - 1].id;
         }
         setNewQuoteNumber("");
         setNewQuoteText("");
@@ -905,7 +1035,9 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     }
     const maxNum = sermon.quotes.reduce((m, q) => Math.max(m, num(q.number) || 0), 0);
     const number = newQuoteNumber.trim() ? num(newQuoteNumber) : maxNum + 1;
-    persistQuotes([...sermon.quotes, { id: genId(), number, text }]);
+    const newId = genId();
+    persistQuotes([...sermon.quotes, { id: newId, number, text }]);
+    pendingScrollIdRef.current = newId;
     setNewQuoteNumber("");
     setNewQuoteText("");
   };
@@ -918,26 +1050,42 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     requestAnimationFrame(() => { restore(); requestAnimationFrame(restore); });
   };
 
-  const updateQuoteNumber = (id, value) => {
-    // "1+2+3"처럼 +로 여러 번호를 적으면, 그 번호들의 내용을 순서대로 합쳐서 맨 앞 번호(예: 1) 하나로 만든다.
-    if (value.includes("+")) {
-      const parts = value.split("+").map((s) => s.trim()).filter(Boolean);
-      if (parts.length > 1) {
-        const targets = parts.map((p) => sermon.quotes.find((q) => String(q.number) === p)).filter(Boolean);
-        if (targets.length > 1) {
-          onSnapshotUndo();
-          const mergedText = targets.map((q) => q.text).join("\n");
-          const keepId = targets[0].id;
-          const mergedNumber = targets[0].number;
-          const removeIds = new Set(targets.slice(1).map((q) => q.id));
-          const next = sermon.quotes
-            .filter((q) => !removeIds.has(q.id))
-            .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber } : q));
-          persistQuotes(next);
-          return;
-        }
-      }
+  // "1+2+3"처럼 +로 여러 번호를 적거나, "1*5"처럼 *로 범위를 적으면, 그 번호들의 내용을
+  // 순서대로 합쳐서 맨 앞 번호 하나로 만든다. 기존 항목의 번호칸, 그리고(번호통합 체크 시)
+  // 새 주요문 추가란의 번호칸 양쪽에서 공통으로 쓴다.
+  const mergeQuoteTargets = (targets) => {
+    if (targets.length <= 1) return false;
+    onSnapshotUndo();
+    const mergedText = targets.map((q) => q.text).join("\n");
+    const keepId = targets[0].id;
+    const mergedNumber = targets[0].number;
+    const removeIds = new Set(targets.slice(1).map((q) => q.id));
+    const next = sermon.quotes
+      .filter((q) => !removeIds.has(q.id))
+      .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber } : q));
+    persistQuotes(next);
+    return true;
+  };
+  const tryMergeByNumberExpression = (value) => {
+    if (value.includes("*")) {
+      const [startRaw, endRaw] = value.split("*").map((s) => s.trim());
+      if (!startRaw || !endRaw) return false;
+      const lo = Math.min(num(startRaw), num(endRaw));
+      const hi = Math.max(num(startRaw), num(endRaw));
+      const targets = sermon.quotes
+        .filter((q) => { const n = num(q.number); return n >= lo && n <= hi; })
+        .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
+      return mergeQuoteTargets(targets);
     }
+    if (!value.includes("+")) return false;
+    const parts = value.split("+").map((s) => s.trim()).filter(Boolean);
+    if (parts.length <= 1) return false;
+    const targets = parts.map((p) => sermon.quotes.find((q) => String(q.number) === p)).filter(Boolean);
+    return mergeQuoteTargets(targets);
+  };
+
+  const updateQuoteNumber = (id, value) => {
+    if (tryMergeByNumberExpression(value)) return;
     // 번호를 바꿔도 목록에서의 위치(줄)는 그대로 두고, 그 항목의 번호 표시만 바꾼다.
     persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, number: value.trim() === "" ? value : num(value) } : q)));
   };
@@ -994,7 +1142,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
       title = lines[0].trim();
       bodyText = lines.slice(2).join("\n");
     }
-    const splitParser = parseQuotesByNumberBlocks;
+    const splitParser = mergeByMajor ? mergeQuotesByMajorNumber : parseQuotesByNumberBlocks;
     const parsed = splitParser(bodyText);
     if (parsed.length === 0) return false;
     const acceptedTexts = sermon.quotes.map((q) => q.text);
@@ -1015,7 +1163,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   };
 
   const handleNewQuotePaste = (e) => {
-    if (!splitByNumber) return; // 번호나눔이 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
+    if (!splitByNumber && !mergeByMajor) return; // 둘 다 꺼져있으면 기본 붙여넣기 그대로(한 칸에 전부 들어감)
     const pasted = e.clipboardData ? e.clipboardData.getData("text") : "";
     if (!pasted || !pasted.includes("\n")) return;
     e.preventDefault();
@@ -1035,7 +1183,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     const title = lines[firstIdx].trim();
     let bodyLines = lines.slice(firstIdx + 1);
     if (bodyLines[0] !== undefined && bodyLines[0].trim() === "") bodyLines = bodyLines.slice(1);
-    const splitParser = parseQuotesByNumberBlocks;
+    const splitParser = mergeByMajor ? mergeQuotesByMajorNumber : parseQuotesByNumberBlocks;
     const parsed = splitParser(bodyLines.join("\n"));
     const acceptedTexts = sermon.quotes.map((q) => q.text);
     const uniqueImported = [];
@@ -1154,7 +1302,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
 
   return (
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 10px) 0 0" }}>
-      <div style={{ padding: "0 10px 10px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+      <div style={{ padding: "0 10px 6px", position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
         <button onClick={onBack} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 14 }}>← 뒤로</button>
         <div style={{ display: "flex", gap: 6 }}>
           <input type="file" accept=".xlsx,.xls" ref={fileInputRef} onChange={handleImportFile} style={{ display: "none" }} />
@@ -1171,8 +1319,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
             ↺{undoCount > 0 ? ` ${undoCount}` : ""}
           </button>
         </div>
-      </div>
-      <div style={{ padding: "0 8px 40px" }}>
+
         <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 40 }}>날짜</span>
@@ -1254,16 +1401,30 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
             <span style={{ fontSize: 13, color: "#8993a6" }}>번</span>
           </div>
         </div>
-
-        <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: "1px solid #262c37" }}>
-          <div style={{ fontSize: 13.5, color: "#8993a6", marginBottom: 8 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <div style={{ marginBottom: 0, paddingTop: 6, borderTop: "1px solid #262c37", width: "100%" }}>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
+          {splitByNumber && (
+            <div style={{ fontSize: 11, color: "#c9974a", marginBottom: 4 }}>
+              번호가 나온 줄부터 다음 번호 나오기 전까지를 한 개로 묶어서, 여러 개의 주요문으로 나눠 추가해요
+            </div>
+          )}
+          {mergeByMajor && (
+            <div style={{ fontSize: 11, color: "#c9974a", marginBottom: 4 }}>
+              번호칸에 "1+2+3" → 1·2·3번을 순서대로 합쳐 1번으로 · "1*5" → 1~5번 범위를 합쳐 1번으로
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
               <input
                 value={newQuoteNumber}
                 onChange={(e) => setNewQuoteNumber(e.target.value)}
+                onBlur={() => {
+                  if (mergeByMajor && (newQuoteNumber.includes("+") || newQuoteNumber.includes("*")) && tryMergeByNumberExpression(newQuoteNumber)) {
+                    setNewQuoteNumber("");
+                  }
+                }}
                 placeholder="번호"
-                inputMode="numeric"
+                inputMode={mergeByMajor ? "tel" : "numeric"}
                 className="field"
                 style={{ width: 48, fontSize: 17, textAlign: "center", padding: "6px 2px" }}
               />
@@ -1271,10 +1432,19 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                 <input
                   type="checkbox"
                   checked={splitByNumber}
-                  onChange={(e) => setSplitByNumber(e.target.checked)}
+                  onChange={(e) => { setSplitByNumber(e.target.checked); if (e.target.checked) setMergeByMajor(false); }}
                   style={{ width: 16, height: 16, accentColor: "#c9974a" }}
                 />
                 <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", marginTop: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={mergeByMajor}
+                  onChange={(e) => { setMergeByMajor(e.target.checked); if (e.target.checked) setSplitByNumber(false); }}
+                  style={{ width: 16, height: 16, accentColor: "#c9974a" }}
+                />
+                <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호통합</span>
               </label>
             </div>
             <textarea
@@ -1282,15 +1452,16 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
               onChange={(e) => setNewQuoteText(e.target.value)}
               onBlur={addQuote}
               onPaste={handleNewQuotePaste}
-              placeholder="내용 입력 (“번호나눔” 체크시 번호별 여러개의 주요문 / 해제시 전체를 하나의 주요문)"
+              placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
               className="field"
-              rows={3}
+              rows={2}
               style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
             />
           </div>
         </div>
 
-
+      </div>
+      <div style={{ padding: "0 8px 40px" }}>
         {filteredQuotes.map((q) => (
           <div key={q.id} ref={(el) => { if (el) quoteRowRefs.current[q.id] = el; }}>
             <SwipeRow
@@ -1302,7 +1473,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                     <input
                       value={q.number}
                       onChange={(e) => updateQuoteNumber(q.id, e.target.value)}
-                      inputMode="numeric"
+                      inputMode={mergeByMajor ? "tel" : "numeric"}
                       className="field"
                       style={{ width: 34, fontSize: 16, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
                     />
@@ -1359,7 +1530,7 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
       if (!q) return true;
       return (s.title || "").toLowerCase().includes(q) || (s.scripture || "").toLowerCase().includes(q) || s.quotes.some((qq) => qq.text.toLowerCase().includes(q));
     })
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // 최근 날짜가 먼저
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)); // 최근 날짜가 제일 마지막(맨 아래)
 
   const fmtDate = (ds) => {
     if (!ds) return ds;
@@ -1809,14 +1980,14 @@ function App() {
     setSermons((prev) => prev.filter((s) => s.id !== id));
   };
 
-  const [newBookTitle, setNewBookTitle] = useState("");
   const [bookListSearchQuery, setBookListSearchQuery] = useState("");
-  const addBook = () => {
-    const trimmed = newBookTitle.trim();
-    if (!trimmed) return;
-    const book = { id: genId(), title: trimmed, learnedCount: 0, bookmarkQuoteId: null, readDate: new Date().toISOString().slice(0, 10), quotes: [] };
+  // 홈 화면의 "새로추가" 아이콘에서 바로 새 책을 만들고, 제목을 넣을 수 있게 바로 그 책 안으로 들어간다.
+  const quickAddBook = () => {
+    const book = { id: genId(), title: "", learnedCount: 0, bookmarkQuoteId: null, readDate: "", quotes: [] };
     setBooks((prev) => [...prev, book]);
-    setNewBookTitle("");
+    setCurrentBookId(book.id);
+    setMainSection("reading");
+    setMainView("book");
   };
 
   const deleteBook = (id) => {
@@ -1824,15 +1995,15 @@ function App() {
     setBooks((prev) => prev.filter((b) => b.id !== id));
   };
 
-  const [newQuoteSetTitle, setNewQuoteSetTitle] = useState("");
   const [quoteSetListSearchQuery, setQuoteSetListSearchQuery] = useState("");
-  const addQuoteSet = () => {
-    const trimmed = newQuoteSetTitle.trim();
-    if (!trimmed) return;
+  // 홈 화면의 "새로추가" 아이콘에서 바로 새 명언을 만들고, 제목을 넣을 수 있게 바로 그 안으로 들어간다.
+  const quickAddQuoteSet = () => {
     const maxNum = quoteSets.reduce((m, s) => Math.max(m, num(s.number) || 0), 0);
-    const set = { id: genId(), number: maxNum + 1, title: trimmed, learnedCount: 0, bookmarkQuoteId: null, readDate: new Date().toISOString().slice(0, 10), quotes: [] };
+    const set = { id: genId(), number: maxNum + 1, title: "", learnedCount: 0, bookmarkQuoteId: null, readDate: "", quotes: [] };
     setQuoteSets((prev) => [...prev, set]);
-    setNewQuoteSetTitle("");
+    setCurrentQuoteSetId(set.id);
+    setMainSection("quotes");
+    setQuoteSetView("book");
   };
 
   const updateQuoteSetNumber = (id, value) => {
@@ -2012,6 +2183,13 @@ function App() {
                 onChange={(e) => setSectionLabel("quotes", e.target.value)}
                 style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 27, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
               />
+              <button
+                onClick={quickAddQuoteSet}
+                title="새로추가"
+                style={{ width: 30, height: 30, borderRadius: "50%", border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontSize: 17, fontWeight: 700, lineHeight: 1, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+              >
+                +
+              </button>
             </div>
             <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>제목을 눌러 주요문을 보고, 아래에서 새 명언 모음을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
 
@@ -2085,19 +2263,6 @@ function App() {
                 </div>
               </div>
             ))}
-
-            <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 명언 제목을 입력하고 완료(엔터)를 누르면 바로 추가돼요</div>
-              <input
-                value={newQuoteSetTitle}
-                onChange={(e) => setNewQuoteSetTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.target.blur(); addQuoteSet(); } }}
-                onBlur={addQuoteSet}
-                placeholder="새 명언 제목 (예: 인생명언)"
-                className="field"
-                style={{ width: "100%", fontSize: 14, padding: "10px 12px" }}
-              />
-            </div>
           </div>
           </div>
         )}
@@ -2156,6 +2321,13 @@ function App() {
               onChange={(e) => setSectionLabel("reading", e.target.value)}
               style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 41, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
             />
+            <button
+              onClick={quickAddBook}
+              title="새로추가"
+              style={{ width: 34, height: 34, borderRadius: "50%", border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontSize: 19, fontWeight: 700, lineHeight: 1, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+            >
+              +
+            </button>
           </div>
           <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>책을 눌러 주요문/요약을 보고, 아래에서 새 책을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
 
@@ -2229,27 +2401,6 @@ function App() {
               </div>
             </div>
           ))}
-
-          <div style={{ marginTop: 6 }}>
-            <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>새 책 제목을 입력하고 추가하세요</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                value={newBookTitle}
-                onChange={(e) => setNewBookTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") addBook(); }}
-                placeholder="새 책 제목 (예: 투자명언)"
-                className="field"
-                style={{ flex: 1, fontSize: 14, padding: "10px 12px" }}
-              />
-              <button
-                onClick={addBook}
-                className="iconbtn"
-                style={{ border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, fontSize: 13, borderRadius: 10, padding: "0 16px", whiteSpace: "nowrap" }}
-              >
-                + 추가
-              </button>
-            </div>
-          </div>
           </div>
         </div>
       )}
