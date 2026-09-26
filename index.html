@@ -2059,28 +2059,28 @@ function App() {
           </div>
 
           <div
-            onClick={() => setMainSection("sermon")}
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", marginBottom: 10, cursor: "pointer" }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 30 }}>⛪</span>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>{sectionLabels.sermon}</div>
-                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{sermons.length}개의 주일 설교</div>
-              </div>
-            </div>
-            <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
-          </div>
-
-          <div
             onClick={() => { setMainSection("quotes"); setQuoteSetView("index"); }}
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", cursor: "pointer" }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", marginBottom: 10, cursor: "pointer" }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 30 }}>{QUOTES_ICON}</span>
               <div>
                 <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>{sectionLabels.quotes}</div>
                 <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{quoteSets.length}개의 명언 모음</div>
+              </div>
+            </div>
+            <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
+          </div>
+
+          <div
+            onClick={() => setMainSection("sermon")}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", cursor: "pointer" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 30 }}>⛪</span>
+              <div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>{sectionLabels.sermon}</div>
+                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{sermons.length}개의 주일 설교</div>
               </div>
             </div>
             <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
