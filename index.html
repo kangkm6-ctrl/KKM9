@@ -11,10 +11,21 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="독서핵심모음집" />
 <meta name="theme-color" content="#12151b" />
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+<link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
-<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+  // 엑셀 기능은 실제로 가져오기/내려받기를 누를 때만 쓰이므로,
+  // 앱이 처음 뜨는 속도를 늦추지 않도록 백그라운드에서 비동기로 미리 받아둔다.
+  (function () {
+    var s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.crossOrigin = "anonymous";
+    document.head.appendChild(s);
+  })();
+</script>
 <style>
   html, body { margin:0; padding:0; background:#12151b; }
   * { box-sizing: border-box; }
@@ -2452,6 +2463,14 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
     document.body.appendChild(box);
   }
 })();
+</script>
+<script>
+  // 다음 실행부터 앱이 바로 뜨도록, 핵심 파일들을 서비스워커에 캐시해둔다.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("./sw.js").catch(function () {});
+    });
+  }
 </script>
 </body>
 </html>
