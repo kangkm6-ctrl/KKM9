@@ -837,6 +837,15 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                 onBlur={() => {
                   if (mergeByMajor && (newQuoteNumber.includes("+") || newQuoteNumber.includes("*")) && tryMergeByNumberExpression(newQuoteNumber)) {
                     setNewQuoteNumber("");
+                    return;
+                  }
+                  // 내용 없이 번호만 적고 벗어나면, 그 번호를 새로 추가하는 대신 그 번호가 있는 줄로 이동한다.
+                  if (!newQuoteText.trim() && newQuoteNumber.trim() && !newQuoteNumber.includes("+") && !newQuoteNumber.includes("*")) {
+                    const target = book.quotes.find((q) => String(q.number) === newQuoteNumber.trim());
+                    if (target) {
+                      pendingScrollIdRef.current = target.id;
+                      setNewQuoteNumber("");
+                    }
                   }
                 }}
                 placeholder="번호"
@@ -1320,74 +1329,72 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           </button>
         </div>
 
-        <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ marginBottom: 8, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 40 }}>날짜</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 36 }}>날짜</span>
             <input
               type="date"
               value={sermon.date}
               onChange={(e) => onUpdateSermon({ ...sermon, date: e.target.value })}
               className="field"
-              style={{ width: "33%", flexShrink: 0, fontSize: 18, fontWeight: 700, color: "#c9974a", padding: "9px 10px" }}
+              style={{ width: "33%", flexShrink: 0, fontSize: 16, fontWeight: 700, color: "#c9974a", padding: "6px 8px" }}
             />
             <input
               value={quoteSearchQuery}
               onChange={(e) => setQuoteSearchQuery(e.target.value)}
               placeholder="🔍 주요문 검색"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 16, padding: "9px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 14, padding: "6px 8px" }}
             />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 40 }}>제목</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 36 }}>제목</span>
             <input
               value={sermon.title}
               onChange={(e) => onUpdateSermon({ ...sermon, title: e.target.value })}
               onPaste={handleTitlePaste}
               placeholder="설교 제목"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 19, fontWeight: 800, color: "#e7eaf0", padding: "9px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 800, color: "#e7eaf0", padding: "6px 8px" }}
             />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 40 }}>성경</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 36 }}>성경</span>
             <input
               value={sermon.scripture}
               onChange={(e) => onUpdateSermon({ ...sermon, scripture: e.target.value })}
               placeholder="예: 요한복음 3장 16절"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 18, color: "#e7eaf0", padding: "9px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 16, color: "#e7eaf0", padding: "6px 8px" }}
             />
             <a
               href="https://apps.apple.com/kr/app/id488089999"
               target="_blank"
               rel="noopener noreferrer"
               title="바이블 애플에서 보기"
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: 10, background: "#ffffff", flexShrink: 0, textDecoration: "none", fontSize: 19, boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, background: "#ffffff", flexShrink: 0, textDecoration: "none", fontSize: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }}
             >
               🍎
             </a>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 40 }}>강사</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#8993a6", flexShrink: 0, width: 36 }}>강사</span>
             <input
               value={sermon.preacher}
               onChange={(e) => onUpdateSermon({ ...sermon, preacher: e.target.value })}
               placeholder={DEFAULT_PREACHER}
               list="preacher-options"
               className="field"
-              style={{ flex: 1, minWidth: 0, fontSize: 18, color: "#e7eaf0", padding: "9px 10px" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 16, color: "#e7eaf0", padding: "6px 8px" }}
             />
             <datalist id="preacher-options">
               {preacherOptions.map((p) => <option key={p} value={p} />)}
             </datalist>
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
-            <span style={{ fontSize: 13, color: "#8993a6" }}>익힘</span>
+            <span style={{ fontSize: 12, color: "#8993a6", flexShrink: 0 }}>익힘</span>
             <button
               type="button"
               onClick={() => setLearnedCount((num(sermon.learnedCount) || 0) + 1)}
-              style={{ width: 24, height: 24, border: "1px solid #262c37", borderRadius: 6, background: "#1a1f28", color: "#c9974a", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: 0, lineHeight: 1 }}
+              style={{ width: 22, height: 22, border: "1px solid #262c37", borderRadius: 6, background: "#1a1f28", color: "#c9974a", fontSize: 13, fontWeight: 700, cursor: "pointer", padding: 0, lineHeight: 1, flexShrink: 0 }}
             >
               +
             </button>
@@ -1396,9 +1403,9 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
               onChange={(e) => setLearnedCount(e.target.value)}
               inputMode="numeric"
               className="field"
-              style={{ width: 44, fontSize: 15, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "5px 2px" }}
+              style={{ width: 38, fontSize: 14, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "5px 2px", flexShrink: 0 }}
             />
-            <span style={{ fontSize: 13, color: "#8993a6" }}>번</span>
+            <span style={{ fontSize: 12, color: "#8993a6", flexShrink: 0 }}>번</span>
           </div>
         </div>
         <div style={{ marginBottom: 0, paddingTop: 6, borderTop: "1px solid #262c37", width: "100%" }}>
@@ -1421,6 +1428,15 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                 onBlur={() => {
                   if (mergeByMajor && (newQuoteNumber.includes("+") || newQuoteNumber.includes("*")) && tryMergeByNumberExpression(newQuoteNumber)) {
                     setNewQuoteNumber("");
+                    return;
+                  }
+                  // 내용 없이 번호만 적고 벗어나면, 그 번호를 새로 추가하는 대신 그 번호가 있는 줄로 이동한다.
+                  if (!newQuoteText.trim() && newQuoteNumber.trim() && !newQuoteNumber.includes("+") && !newQuoteNumber.includes("*")) {
+                    const target = sermon.quotes.find((q) => String(q.number) === newQuoteNumber.trim());
+                    if (target) {
+                      pendingScrollIdRef.current = target.id;
+                      setNewQuoteNumber("");
+                    }
                   }
                 }}
                 placeholder="번호"
