@@ -1578,12 +1578,12 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
         </div>
     </div>
     <div style={{ padding: "0 16px 20px" }}>
-      <div style={{ fontSize: 33, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ fontSize: 40, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
         <span>⛪</span>
         <input
           value={label}
           onChange={(e) => onChangeLabel(e.target.value)}
-          style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 33, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
+          style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 40, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
         />
       </div>
       <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>
@@ -2192,12 +2192,12 @@ function App() {
               </div>
           </div>
           <div style={{ padding: "0 16px 20px" }}>
-            <div style={{ fontSize: 27, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 40, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
               <span>{QUOTES_ICON}</span>
               <input
                 value={sectionLabels.quotes}
                 onChange={(e) => setSectionLabel("quotes", e.target.value)}
-                style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 27, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
+                style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 40, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
               />
               <button
                 onClick={quickAddQuoteSet}
@@ -2330,12 +2330,12 @@ function App() {
             </div>
           </div>
           <div style={{ padding: "0 16px 20px" }}>
-          <div style={{ fontSize: 41, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: 40, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
             <span>📖</span>
             <input
               value={sectionLabels.reading}
               onChange={(e) => setSectionLabel("reading", e.target.value)}
-              style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 41, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
+              style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 40, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
             />
             <button
               onClick={quickAddBook}
