@@ -1580,6 +1580,13 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
     })
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)); // 최근 날짜가 제일 마지막(맨 아래)
 
+  const jumpToLatest = () => {
+    if (!sermons.length) return;
+    const latest = sermons.reduce((a, b) => ((a.date || "") >= (b.date || "") ? a : b));
+    const node = latest && rowRefs.current[latest.id];
+    if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   const fmtDate = (ds) => {
     if (!ds) return ds;
     const d = parseLocalDate(ds);
@@ -1622,13 +1629,23 @@ function SermonListView({ sermons, onOpenSermon, onDeleteSermon, newSermonDate, 
         매주 일요일 날짜가 자동으로 추가돼요(앱을 열 때 그 사이 빠진 주를 채워 넣어요). 필요하면 날짜를 직접 추가할 수도 있어요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.
       </div>
 
-      <input
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="🔍 주요문 검색 (제목/성경/내용)"
-        className="field"
-        style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
-      />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="🔍 주요문 검색 (제목/성경/내용)"
+          className="field"
+          style={{ flex: 1, minWidth: 0, fontSize: 14, padding: "8px 10px" }}
+        />
+        <button
+          type="button"
+          onClick={jumpToLatest}
+          className="iconbtn"
+          style={{ flexShrink: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}
+        >
+          🕓 최근날짜로
+        </button>
+      </div>
 
       {sorted.length === 0 && (
         <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 설교가 없어요.</div>
