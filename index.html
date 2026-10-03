@@ -648,10 +648,26 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
       : book.quotes;
     // 제목 변경과 주요문 추가를 한 번의 업데이트로 같이 반영한다(따로 호출하면 나중 호출이
     // 앞 호출로 바뀐 내용을 오래된 상태로 덮어써버리는 문제가 있었다).
+    if (uniqueImported.length > 0) pendingScrollIdRef.current = uniqueImported[uniqueImported.length - 1].id;
     onUpdateBook({ ...book, quotes: finalQuotes, ...(title ? { title } : {}) });
     if (title) setTitleDraft(title);
     alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}${title ? ` 제목도 "${title}"(으)로 반영했어요.` : ""}`);
     return true;
+  };
+
+  // ✓ 버튼을 눌러야 주요문으로 입력된다. (번호나눔/번호통합이 켜져 있고 여러 줄이면 나눠서 입력)
+  const confirmQuote = () => {
+    const raw = newQuoteText;
+    if (!raw.trim()) return;
+    if (quoteSearchQuery) setQuoteSearchQuery("");
+    if ((splitByNumber || mergeByMajor) && raw.includes("\n")) {
+      if (importFromNotesText(raw)) {
+        setNewQuoteNumber("");
+        setNewQuoteText("");
+        return;
+      }
+    }
+    addQuote();
   };
 
   const handleNewQuotePaste = (e) => {
@@ -829,7 +845,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
           </div>
         </div>
         <div style={{ marginBottom: 0, paddingTop: 6, borderTop: "1px solid #262c37", width: "100%" }}>
-          <div style={{ fontSize: 11, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
+          <div style={{ fontSize: 11, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호)</div>
           {splitByNumber && (
             <div style={{ fontSize: 10.5, color: "#c9974a", marginBottom: 4 }}>
               번호가 나온 줄부터 다음 번호 나오기 전까지를 한 개로 묶어서, 여러 개의 주요문으로 나눠 추가해요
@@ -886,13 +902,20 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
             <textarea
               value={newQuoteText}
               onChange={(e) => setNewQuoteText(e.target.value)}
-              onBlur={addQuote}
-              onPaste={handleNewQuotePaste}
               placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
               className="field"
               rows={2}
-              style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
+              style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
             />
+            <button
+              type="button"
+              onClick={confirmQuote}
+              disabled={!newQuoteText.trim()}
+              style={{ alignSelf: "stretch", width: 44, flexShrink: 0, border: "1px solid #c9974a", borderRadius: 8, background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, cursor: "pointer", padding: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, opacity: newQuoteText.trim() ? 1 : 0.35 }}
+            >
+              <span style={{ fontSize: 22, lineHeight: 1 }}>✓</span>
+              <span style={{ fontSize: 10 }}>입력</span>
+            </button>
           </div>
         </div>
 
@@ -958,7 +981,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                     }}
                     className="field"
                     rows={1}
-                    style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.55, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+                    style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
                   />
                 </div>
               }
@@ -1177,9 +1200,25 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
       ? [...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 }))
       : sermon.quotes;
     // 제목 변경과 주요문 추가를 한 번의 업데이트로 같이 반영한다.
+    if (uniqueImported.length > 0) pendingScrollIdRef.current = uniqueImported[uniqueImported.length - 1].id;
     onUpdateSermon({ ...sermon, quotes: finalQuotes, ...(title ? { title } : {}) });
     alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}${title ? ` 제목도 "${title}"(으)로 반영했어요.` : ""}`);
     return true;
+  };
+
+  // ✓ 버튼을 눌러야 주요문으로 입력된다. (번호나눔/번호통합이 켜져 있고 여러 줄이면 나눠서 입력)
+  const confirmQuote = () => {
+    const raw = newQuoteText;
+    if (!raw.trim()) return;
+    if (quoteSearchQuery) setQuoteSearchQuery("");
+    if ((splitByNumber || mergeByMajor) && raw.includes("\n")) {
+      if (importFromNotesText(raw)) {
+        setNewQuoteNumber("");
+        setNewQuoteText("");
+        return;
+      }
+    }
+    addQuote();
   };
 
   const handleNewQuotePaste = (e) => {
@@ -1420,7 +1459,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           </div>
         </div>
         <div style={{ marginBottom: 0, paddingTop: 6, borderTop: "1px solid #262c37", width: "100%" }}>
-          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (번호를 안 넣으면 자동으로 다음 번호가 매겨져요)</div>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호)</div>
           {splitByNumber && (
             <div style={{ fontSize: 11, color: "#c9974a", marginBottom: 4 }}>
               번호가 나온 줄부터 다음 번호 나오기 전까지를 한 개로 묶어서, 여러 개의 주요문으로 나눠 추가해요
@@ -1477,13 +1516,20 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
             <textarea
               value={newQuoteText}
               onChange={(e) => setNewQuoteText(e.target.value)}
-              onBlur={addQuote}
-              onPaste={handleNewQuotePaste}
               placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
               className="field"
               rows={2}
-              style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.6, resize: "vertical" }}
+              style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: "29px", resize: "vertical" }}
             />
+            <button
+              type="button"
+              onClick={confirmQuote}
+              disabled={!newQuoteText.trim()}
+              style={{ alignSelf: "stretch", width: 44, flexShrink: 0, border: "1px solid #c9974a", borderRadius: 8, background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, cursor: "pointer", padding: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, opacity: newQuoteText.trim() ? 1 : 0.35 }}
+            >
+              <span style={{ fontSize: 22, lineHeight: 1 }}>✓</span>
+              <span style={{ fontSize: 10 }}>입력</span>
+            </button>
           </div>
         </div>
 
@@ -1541,7 +1587,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                     }}
                     className="field"
                     rows={1}
-                    style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: 1.55, fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+                    style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
                   />
                 </div>
               }
@@ -2085,7 +2131,7 @@ function App() {
       <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
         {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
         <style>{`
-          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
+          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; font-family:inherit; box-sizing:border-box; }
           .field:focus { outline:none; border-color:#c9974a; }
           .iconbtn { background:none; border:none; cursor:pointer; }
         `}</style>
@@ -2167,7 +2213,7 @@ function App() {
       <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
         {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
         <style>{`
-          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
+          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; font-family:inherit; box-sizing:border-box; }
           .field:focus { outline:none; border-color:#c9974a; }
           .iconbtn { background:none; border:none; cursor:pointer; }
         `}</style>
@@ -2213,7 +2259,7 @@ function App() {
       <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
         {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
         <style>{`
-          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
+          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; font-family:inherit; box-sizing:border-box; }
           .field:focus { outline:none; border-color:#c9974a; }
           .iconbtn { background:none; border:none; cursor:pointer; }
         `}</style>
@@ -2351,7 +2397,7 @@ function App() {
     <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
       {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
       <style>{`
-        .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; }
+        .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; font-family:inherit; box-sizing:border-box; }
         .field:focus { outline:none; border-color:#c9974a; }
         .iconbtn { background:none; border:none; cursor:pointer; }
       `}</style>
