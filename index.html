@@ -465,6 +465,26 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
   const quoteRowRefs = useRef({});
   const pendingScrollIdRef = useRef(null);
+  // 키보드 위쪽 ✓(완료)를 눌러 키보드가 닫힐 때만 입력한다. 화면의 다른 곳을 터치하다가
+  // 생긴 포커스 이동이나, 앱을 벗어나며 생긴 blur는 입력하지 않는다.
+  const lastOutsideTouchRef = useRef(0);
+  const quoteTextareaRef = useRef(null);
+  useEffect(() => {
+    const mark = (e) => {
+      if (e.target !== quoteTextareaRef.current) lastOutsideTouchRef.current = Date.now();
+    };
+    document.addEventListener("touchstart", mark, true);
+    document.addEventListener("mousedown", mark, true);
+    return () => {
+      document.removeEventListener("touchstart", mark, true);
+      document.removeEventListener("mousedown", mark, true);
+    };
+  }, []);
+  const handleQuoteBlur = () => {
+    if (Date.now() - lastOutsideTouchRef.current < 700) return;
+    if (document.visibilityState !== "visible") return;
+    confirmQuote();
+  };
 
   // 이 화면에 새로 들어올 때는 항상 맨 위(1번)부터 보이게 스크롤을 초기화한다.
   useEffect(() => {
@@ -845,7 +865,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
           </div>
         </div>
         <div style={{ marginBottom: 0, paddingTop: 6, borderTop: "1px solid #262c37", width: "100%" }}>
-          <div style={{ fontSize: 11, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호)</div>
+          <div style={{ fontSize: 11, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 키보드 위 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호)</div>
           {splitByNumber && (
             <div style={{ fontSize: 10.5, color: "#c9974a", marginBottom: 4 }}>
               번호가 나온 줄부터 다음 번호 나오기 전까지를 한 개로 묶어서, 여러 개의 주요문으로 나눠 추가해요
@@ -901,21 +921,14 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
             </div>
             <textarea
               value={newQuoteText}
+              ref={quoteTextareaRef}
               onChange={(e) => setNewQuoteText(e.target.value)}
+              onBlur={handleQuoteBlur}
               placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
               className="field"
               rows={2}
               style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
             />
-            <button
-              type="button"
-              onClick={confirmQuote}
-              disabled={!newQuoteText.trim()}
-              style={{ alignSelf: "stretch", width: 44, flexShrink: 0, border: "1px solid #c9974a", borderRadius: 8, background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, cursor: "pointer", padding: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, opacity: newQuoteText.trim() ? 1 : 0.35 }}
-            >
-              <span style={{ fontSize: 22, lineHeight: 1 }}>✓</span>
-              <span style={{ fontSize: 10 }}>입력</span>
-            </button>
           </div>
         </div>
 
@@ -1018,6 +1031,26 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
   const quoteRowRefs = useRef({});
   const pendingScrollIdRef = useRef(null);
+  // 키보드 위쪽 ✓(완료)를 눌러 키보드가 닫힐 때만 입력한다. 화면의 다른 곳을 터치하다가
+  // 생긴 포커스 이동이나, 앱을 벗어나며 생긴 blur는 입력하지 않는다.
+  const lastOutsideTouchRef = useRef(0);
+  const quoteTextareaRef = useRef(null);
+  useEffect(() => {
+    const mark = (e) => {
+      if (e.target !== quoteTextareaRef.current) lastOutsideTouchRef.current = Date.now();
+    };
+    document.addEventListener("touchstart", mark, true);
+    document.addEventListener("mousedown", mark, true);
+    return () => {
+      document.removeEventListener("touchstart", mark, true);
+      document.removeEventListener("mousedown", mark, true);
+    };
+  }, []);
+  const handleQuoteBlur = () => {
+    if (Date.now() - lastOutsideTouchRef.current < 700) return;
+    if (document.visibilityState !== "visible") return;
+    confirmQuote();
+  };
 
   // 이 화면에 새로 들어올 때는 항상 맨 위(1번)부터 보이게 스크롤을 초기화한다.
   useEffect(() => {
@@ -1459,7 +1492,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           </div>
         </div>
         <div style={{ marginBottom: 0, paddingTop: 6, borderTop: "1px solid #262c37", width: "100%" }}>
-          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호)</div>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 키보드 위 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호)</div>
           {splitByNumber && (
             <div style={{ fontSize: 11, color: "#c9974a", marginBottom: 4 }}>
               번호가 나온 줄부터 다음 번호 나오기 전까지를 한 개로 묶어서, 여러 개의 주요문으로 나눠 추가해요
@@ -1515,21 +1548,14 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
             </div>
             <textarea
               value={newQuoteText}
+              ref={quoteTextareaRef}
               onChange={(e) => setNewQuoteText(e.target.value)}
+              onBlur={handleQuoteBlur}
               placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
               className="field"
               rows={2}
               style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: "29px", resize: "vertical" }}
             />
-            <button
-              type="button"
-              onClick={confirmQuote}
-              disabled={!newQuoteText.trim()}
-              style={{ alignSelf: "stretch", width: 44, flexShrink: 0, border: "1px solid #c9974a", borderRadius: 8, background: "rgba(201,151,74,0.12)", color: "#c9974a", fontWeight: 700, cursor: "pointer", padding: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, opacity: newQuoteText.trim() ? 1 : 0.35 }}
-            >
-              <span style={{ fontSize: 22, lineHeight: 1 }}>✓</span>
-              <span style={{ fontSize: 10 }}>입력</span>
-            </button>
           </div>
         </div>
 
