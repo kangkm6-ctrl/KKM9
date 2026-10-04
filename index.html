@@ -95,6 +95,26 @@ const parseHierNumber = (raw) => {
   return { major, minor, sortValue: major + minor / 1000, label: `${m[1]}-${m[2]}`, text: m[3].trim() };
 };
 
+// 주요문을 삭제하면, 삭제된 번호보다 큰 번호들을 한 칸씩 앞으로 당겨 빈 번호가 생기지 않게 한다.
+// (예: 1,2,3,4 에서 2번을 삭제 → 3번은 2번, 4번은 3번으로.) 3-1 같은 하위번호도 상위번호만 한 칸 당긴다.
+// 삭제된 항목의 번호가 정수가 아니면(번호 없음, 하위번호 등) 번호를 건드리지 않는다.
+const renumberAfterDelete = (quotes, deleted) => {
+  const d = deleted ? deleted.number : null;
+  if (typeof d !== "number" || !Number.isInteger(d)) return quotes;
+  const shift = (n) => {
+    if (typeof n === "number") {
+      if (Math.floor(n + 1e-9) > d) return Number.isInteger(n) ? n - 1 : Math.round((n - 1) * 1000) / 1000;
+      return n;
+    }
+    if (typeof n === "string") {
+      const m = n.match(/^(\d+)([.\-])(\d+)$/);
+      if (m && Number(m[1]) > d) return `${Number(m[1]) - 1}${m[2]}${m[3]}`;
+    }
+    return n;
+  };
+  return quotes.map((q) => ({ ...q, number: shift(q.number) }));
+};
+
 // 아이폰 메모 앱과 주고받기 위한 순수 텍스트 변환 (메모 앱은 별도 API가 없어서,
 // 공유시트/복사-붙여넣기를 매개로 삼는다). 메모 앱의 번호 목록/하위 목록 형식에 맞춰,
 // 번호는 줄 맨 앞에 "1. "로, 하위 항목은 탭(Tab)으로 들여써서 내보낸다 — 메모 앱은 탭으로
@@ -555,7 +575,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   // 삭제할 때 화면이 튀지 않도록, 삭제 직후 스크롤 위치를 원래 자리로 고정한다.
   const deleteQuoteById = (id) => {
     const scrollY = window.scrollY;
-    persistQuotes(book.quotes.filter((q) => q.id !== id));
+    persistQuotes(renumberAfterDelete(book.quotes.filter((q) => q.id !== id), book.quotes.find((q) => q.id === id)));
     const restore = () => window.scrollTo(0, scrollY);
     requestAnimationFrame(() => { restore(); requestAnimationFrame(restore); });
   };
@@ -603,7 +623,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   const updateQuoteText = (id, value) => {
     if (value.trim() === "") {
       onSnapshotUndo();
-      // 지워서 삭제할 때도 남은 항목들의 번호는 그대로 두고(다시 매기지 않고) 그 줄만 뺀다.
+      // 지워서 삭제할 때도 버튼으로 삭제할 때와 같이, 아래 번호들이 한 칸씩 앞으로 당겨진다.
       deleteQuoteById(id);
       return;
     }
@@ -1121,7 +1141,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   // 삭제할 때 화면이 튀지 않도록, 삭제 직후 스크롤 위치를 원래 자리로 고정한다.
   const deleteQuoteById = (id) => {
     const scrollY = window.scrollY;
-    persistQuotes(sermon.quotes.filter((q) => q.id !== id));
+    persistQuotes(renumberAfterDelete(sermon.quotes.filter((q) => q.id !== id), sermon.quotes.find((q) => q.id === id)));
     const restore = () => window.scrollTo(0, scrollY);
     requestAnimationFrame(() => { restore(); requestAnimationFrame(restore); });
   };
@@ -1169,7 +1189,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   const updateQuoteText = (id, value) => {
     if (value.trim() === "") {
       onSnapshotUndo();
-      // 지워서 삭제할 때도 남은 항목들의 번호는 그대로 두고(다시 매기지 않고) 그 줄만 뺀다.
+      // 지워서 삭제할 때도 버튼으로 삭제할 때와 같이, 아래 번호들이 한 칸씩 앞으로 당겨진다.
       deleteQuoteById(id);
       return;
     }
