@@ -605,8 +605,15 @@ function FullImage({ refId }) {
   return <img src={src} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />;
 }
 
-// 주요문에 붙은 사진 썸네일. 누르면 전체화면으로 보고, × 로 삭제한다.
-function QuoteImages({ images, onRemove }) {
+// 글 칸의 맨 앞(커서 위치 0, 선택 없음)에서 백스페이스를 눌렀는지. 이때는 앞쪽의 사진을 글자처럼 하나 지운다.
+const isBackspaceAtStart = (e) => {
+  if (e.nativeEvent && e.nativeEvent.isComposing) return false;
+  const t = e.target;
+  return (e.key === "Backspace" || e.keyCode === 8) && t.selectionStart === 0 && t.selectionEnd === 0;
+};
+
+// 주요문에 붙은 사진 썸네일. 누르면 전체화면으로 본다. (지우기는 글 칸 맨 앞에서 백스페이스)
+function QuoteImages({ images }) {
   const [open, setOpen] = useState(null);
   if (!images || images.length === 0) return null;
   const overlay = open !== null && images[open] ? ReactDOM.createPortal(
@@ -620,7 +627,7 @@ function QuoteImages({ images, onRemove }) {
   ) : null;
   return (
     <>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
         {images.map((ref, i) => (
           <div key={ref.length > 80 ? i : ref + i} style={{ position: "relative" }}>
             <StoredImg
@@ -628,15 +635,6 @@ function QuoteImages({ images, onRemove }) {
               onClick={() => setOpen(i)}
               style={{ display: "block", height: 76, maxWidth: 150, objectFit: "cover", borderRadius: 8, border: "1px solid #2a303c", cursor: "pointer" }}
             />
-            {onRemove && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onRemove(i); }}
-                style={{ position: "absolute", top: -7, right: -7, width: 22, height: 22, borderRadius: "50%", border: "none", background: "#e8544b", color: "#fff", fontSize: 14, fontWeight: 700, padding: 0, lineHeight: "22px", cursor: "pointer" }}
-              >
-                ×
-              </button>
-            )}
           </div>
         ))}
       </div>
@@ -955,8 +953,6 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
 
   // ---- 사진: 붙여넣기 / 사진 고르기 ----
   const bookRef = useRef(book); bookRef.current = book;
-  const addQuoteRef = useRef(null); addQuoteRef.current = addQuote;
-  const newImageInputRef = useRef(null);
   const attachImagesToQuote = (id, imgs) => {
     if (!imgs.length) return;
     const cur = bookRef.current;
@@ -983,12 +979,6 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     if (!files.length) return;
     e.preventDefault();
     compressAll(files).then((imgs) => setNewQuoteImages((prev) => [...prev, ...imgs]));
-  };
-  const handlePickedImages = (e) => {
-    const files = Array.from((e.target && e.target.files) || []);
-    e.target.value = "";
-    if (!files.length) return;
-    compressAll(files).then((imgs) => { if (imgs.length && addQuoteRef.current) addQuoteRef.current(imgs); });
   };
 
   // ✓ 버튼을 눌러야 주요문으로 입력된다. (번호나눔/번호통합이 켜져 있고 여러 줄이면 나눠서 입력)
@@ -1181,7 +1171,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
           </div>
         </div>
         <div style={{ marginBottom: 0, paddingTop: 6, borderTop: "1px solid #262c37", width: "100%" }}>
-          <div style={{ fontSize: 11, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 키보드 위 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호)</div>
+          <div style={{ fontSize: 11, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 키보드 위 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호 · 사진은 글 맨 앞에서 ⌫로 지워요)</div>
           {splitByNumber && (
             <div style={{ fontSize: 10.5, color: "#c9974a", marginBottom: 4 }}>
               번호가 나온 줄부터 다음 번호 나오기 전까지를 한 개로 묶어서, 여러 개의 주요문으로 나눠 추가해요
@@ -1234,29 +1224,20 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                 />
                 <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
               </label>
-              <input type="file" accept="image/*" multiple ref={newImageInputRef} onChange={handlePickedImages} style={{ display: "none" }} />
-              <button
-                type="button"
-                onClick={() => newImageInputRef.current && newImageInputRef.current.click()}
-                title="사진 추가"
-                style={{ marginTop: 6, width: 34, height: 30, borderRadius: 8, border: "1px solid #2a303c", background: "#1a1f28", fontSize: 16, padding: 0, cursor: "pointer" }}
-              >
-                📷
-              </button>
             </div>
-            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-            <textarea
-              value={newQuoteText}
-              ref={quoteTextareaRef}
-              onChange={(e) => setNewQuoteText(e.target.value)}
-              onBlur={handleQuoteBlur}
-              placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
-              className="field"
-              rows={2}
-              onPaste={pasteIntoNew}
-              style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
-            />
-            <QuoteImages images={newQuoteImages} onRemove={(i) => setNewQuoteImages((prev) => prev.filter((_, k) => k !== i))} />
+            <div className="field field-wrap" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <QuoteImages images={newQuoteImages} />
+              <textarea
+                value={newQuoteText}
+                ref={quoteTextareaRef}
+                onChange={(e) => setNewQuoteText(e.target.value)}
+                onBlur={handleQuoteBlur}
+                placeholder="내용 입력 또는 사진 붙여넣기 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
+                rows={2}
+                onPaste={pasteIntoNew}
+                onKeyDown={(e) => { if (newQuoteImages.length && isBackspaceAtStart(e)) { e.preventDefault(); setNewQuoteImages((prev) => prev.slice(0, -1)); } }}
+                style={{ display: "block", flex: 1, width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", margin: 0, padding: 0, fontFamily: "inherit", fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
+              />
             </div>
           </div>
         </div>
@@ -1314,6 +1295,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                     </button>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
+                  <QuoteImages images={q.images} />
                   <textarea
                     ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
                     value={q.text}
@@ -1325,9 +1307,9 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                     className="field"
                     rows={1}
                                         onPaste={(e) => pasteIntoQuote(e, q.id)}
+                    onKeyDown={(e) => { if (q.images && q.images.length && isBackspaceAtStart(e)) { e.preventDefault(); removeQuoteImage(q.id, q.images.length - 1); } }}
                     style={{ display: "block", fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
                   />
-                  <QuoteImages images={q.images} onRemove={(i) => removeQuoteImage(q.id, i)} />
                   </div>
                 </div>
               }
@@ -1582,8 +1564,6 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
 
   // ---- 사진: 붙여넣기 / 사진 고르기 ----
   const sermonRef = useRef(sermon); sermonRef.current = sermon;
-  const addQuoteRef = useRef(null); addQuoteRef.current = addQuote;
-  const newImageInputRef = useRef(null);
   const attachImagesToQuote = (id, imgs) => {
     if (!imgs.length) return;
     const cur = sermonRef.current;
@@ -1610,12 +1590,6 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     if (!files.length) return;
     e.preventDefault();
     compressAll(files).then((imgs) => setNewQuoteImages((prev) => [...prev, ...imgs]));
-  };
-  const handlePickedImages = (e) => {
-    const files = Array.from((e.target && e.target.files) || []);
-    e.target.value = "";
-    if (!files.length) return;
-    compressAll(files).then((imgs) => { if (imgs.length && addQuoteRef.current) addQuoteRef.current(imgs); });
   };
 
   // ✓ 버튼을 눌러야 주요문으로 입력된다. (번호나눔/번호통합이 켜져 있고 여러 줄이면 나눠서 입력)
@@ -1880,7 +1854,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           </div>
         </div>
         <div style={{ marginBottom: 0, paddingTop: 6, borderTop: "1px solid #262c37", width: "100%" }}>
-          <div style={{ fontSize: 11, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 키보드 위 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호)</div>
+          <div style={{ fontSize: 11, color: "#8993a6", marginBottom: 4 }}>새 주요문 추가 (내용을 적고 키보드 위 ✓를 눌러야 입력돼요 · 번호를 안 넣으면 자동으로 다음 번호 · 사진은 글 맨 앞에서 ⌫로 지워요)</div>
           {splitByNumber && (
             <div style={{ fontSize: 10.5, color: "#c9974a", marginBottom: 4 }}>
               번호가 나온 줄부터 다음 번호 나오기 전까지를 한 개로 묶어서, 여러 개의 주요문으로 나눠 추가해요
@@ -1933,29 +1907,20 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                 />
                 <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
               </label>
-              <input type="file" accept="image/*" multiple ref={newImageInputRef} onChange={handlePickedImages} style={{ display: "none" }} />
-              <button
-                type="button"
-                onClick={() => newImageInputRef.current && newImageInputRef.current.click()}
-                title="사진 추가"
-                style={{ marginTop: 6, width: 34, height: 30, borderRadius: 8, border: "1px solid #2a303c", background: "#1a1f28", fontSize: 16, padding: 0, cursor: "pointer" }}
-              >
-                📷
-              </button>
             </div>
-            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-            <textarea
-              value={newQuoteText}
-              ref={quoteTextareaRef}
-              onChange={(e) => setNewQuoteText(e.target.value)}
-              onBlur={handleQuoteBlur}
-              placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
-              className="field"
-              rows={2}
-              onPaste={pasteIntoNew}
-              style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
-            />
-            <QuoteImages images={newQuoteImages} onRemove={(i) => setNewQuoteImages((prev) => prev.filter((_, k) => k !== i))} />
+            <div className="field field-wrap" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <QuoteImages images={newQuoteImages} />
+              <textarea
+                value={newQuoteText}
+                ref={quoteTextareaRef}
+                onChange={(e) => setNewQuoteText(e.target.value)}
+                onBlur={handleQuoteBlur}
+                placeholder="내용 입력 또는 사진 붙여넣기 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
+                rows={2}
+                onPaste={pasteIntoNew}
+                onKeyDown={(e) => { if (newQuoteImages.length && isBackspaceAtStart(e)) { e.preventDefault(); setNewQuoteImages((prev) => prev.slice(0, -1)); } }}
+                style={{ display: "block", flex: 1, width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", margin: 0, padding: 0, fontFamily: "inherit", fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
+              />
             </div>
           </div>
         </div>
@@ -2005,6 +1970,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                     </button>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
+                  <QuoteImages images={q.images} />
                   <textarea
                     ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
                     value={q.text}
@@ -2016,9 +1982,9 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                     className="field"
                     rows={1}
                                         onPaste={(e) => pasteIntoQuote(e, q.id)}
+                    onKeyDown={(e) => { if (q.images && q.images.length && isBackspaceAtStart(e)) { e.preventDefault(); removeQuoteImage(q.id, q.images.length - 1); } }}
                     style={{ display: "block", fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
                   />
-                  <QuoteImages images={q.images} onRemove={(i) => removeQuoteImage(q.id, i)} />
                   </div>
                 </div>
               }
@@ -2631,7 +2597,7 @@ function App() {
         {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
         <style>{`
           .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; font-family:inherit; box-sizing:border-box; }
-          .field:focus { outline:none; border-color:#c9974a; }
+          .field:focus { outline:none; border-color:#c9974a; } .field-wrap:focus-within { border-color:#c9974a; }
           .iconbtn { background:none; border:none; cursor:pointer; }
         `}</style>
         <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
@@ -2714,7 +2680,7 @@ function App() {
         {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
         <style>{`
           .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; font-family:inherit; box-sizing:border-box; }
-          .field:focus { outline:none; border-color:#c9974a; }
+          .field:focus { outline:none; border-color:#c9974a; } .field-wrap:focus-within { border-color:#c9974a; }
           .iconbtn { background:none; border:none; cursor:pointer; }
         `}</style>
         {sermonView === "list" && (
@@ -2760,7 +2726,7 @@ function App() {
         {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
         <style>{`
           .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; font-family:inherit; box-sizing:border-box; }
-          .field:focus { outline:none; border-color:#c9974a; }
+          .field:focus { outline:none; border-color:#c9974a; } .field-wrap:focus-within { border-color:#c9974a; }
           .iconbtn { background:none; border:none; cursor:pointer; }
         `}</style>
 
@@ -2898,7 +2864,7 @@ function App() {
       {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
       <style>{`
         .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; font-family:inherit; box-sizing:border-box; }
-        .field:focus { outline:none; border-color:#c9974a; }
+        .field:focus { outline:none; border-color:#c9974a; } .field-wrap:focus-within { border-color:#c9974a; }
         .iconbtn { background:none; border:none; cursor:pointer; }
       `}</style>
 
