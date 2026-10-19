@@ -424,6 +424,243 @@ function loadRawSermons() {
 
 // 본문을 눌러 왼쪽으로 당기면 삭제/취소 버튼이 나타나는 스와이프 행.
 // onNavigate가 없으면 탭해도 이동하지 않고(내부 입력칸이 정상적으로 반응), 스와이프로 열고 닫는 것만 동작한다.
+// ---- 사진 저장소: IndexedDB ----
+// 사진 본문은 IndexedDB(용량이 훨씬 큼)에 두고, 주요문에는 사진 번호(id)만 적어 둔다.
+// IndexedDB를 쓸 수 없는 환경이면 예전처럼 주요문 안에 사진 데이터를 직접 넣는 방식으로 대신한다.
+const IMG_DB_NAME = "reading-summary-images-v1";
+const IMG_STORE = "images";
+let __imgDbPromise = null;
+const openImgDb = () => {
+  if (!__imgDbPromise) {
+    __imgDbPromise = new Promise((resolve, reject) => {
+      try {
+        if (typeof indexedDB === "undefined" || !indexedDB) { reject(new Error("IndexedDB 사용 불가")); return; }
+        const req = indexedDB.open(IMG_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          if (!req.result.objectStoreNames.contains(IMG_STORE)) req.result.createObjectStore(IMG_STORE);
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error("IndexedDB 열기 실패"));
+        req.onblocked = () => reject(new Error("IndexedDB 차단됨"));
+      } catch (err) { reject(err); }
+    });
+    __imgDbPromise.catch(() => { __imgDbPromise = null; });
+  }
+  return __imgDbPromise;
+};
+const imgTx = (mode, fn) => openImgDb().then((db) => new Promise((resolve, reject) => {
+  let req;
+  const tx = db.transaction(IMG_STORE, mode);
+  tx.oncomplete = () => resolve(req ? req.result : undefined);
+  tx.onerror = () => reject(tx.error);
+  tx.onabort = () => reject(tx.error || new Error("저장 중단됨"));
+  req = fn(tx.objectStore(IMG_STORE));
+}));
+const imgPut = (id, data) => imgTx("readwrite", (st) => st.put(data, id));
+const imgGet = (id) => imgTx("readonly", (st) => st.get(id));
+const imgDelete = (id) => imgTx("readwrite", (st) => st.delete(id));
+const imgAllKeys = () => imgTx("readonly", (st) => st.getAllKeys());
+const imgStats = () => openImgDb().then((db) => new Promise((resolve, reject) => {
+  let count = 0, bytes = 0;
+  const tx = db.transaction(IMG_STORE, "readonly");
+  const req = tx.objectStore(IMG_STORE).openCursor();
+  req.onsuccess = () => {
+    const c = req.result;
+    if (c) { count++; bytes += typeof c.value === "string" ? c.value.length : 0; c.continue(); }
+  };
+  tx.oncomplete = () => resolve({ count, bytes });
+  tx.onerror = () => reject(tx.error);
+}));
+
+const __imgCache = new Map(); // id -> 사진 데이터 (한 번 읽은 사진은 다시 읽지 않는다)
+// 이번 실행 중에 저장한 사진 번호. 아직 주요문에 연결되기 전일 수 있으므로 "안 쓰는 사진 정리" 대상에서 항상 제외한다.
+const __sessionSavedIds = new Set();
+const isInlineImage = (r) => typeof r === "string" && r.startsWith("data:");
+// 사진 데이터를 저장소에 넣고 사진 번호를 돌려준다. 저장소를 못 쓰면 데이터 자체를 돌려준다(직접 저장).
+const saveImageData = async (data) => {
+  const id = "img-" + genId();
+  __sessionSavedIds.add(id);
+  try {
+    await imgPut(id, data);
+    __imgCache.set(id, data);
+    return id;
+  } catch (err) {
+    return data;
+  }
+};
+const collectImageRefs = (lists) => {
+  const out = new Set();
+  (lists || []).forEach((l) => (l || []).forEach((it) => (it.quotes || []).forEach((q) => (q.images || []).forEach((r) => { if (!isInlineImage(r)) out.add(r); }))));
+  return out;
+};
+const replaceImageRefs = (list, map) => (list || []).map((it) => ({
+  ...it,
+  quotes: (it.quotes || []).map((q) => (q.images && q.images.some((r) => map.has(r)) ? { ...q, images: q.images.map((r) => map.get(r) || r) } : q)),
+}));
+// 사진 번호(또는 직접 저장된 사진)로 화면에 그릴 사진 주소를 얻는다. undefined = 읽는 중, null = 없음.
+function useStoredImage(ref) {
+  const inline = isInlineImage(ref);
+  const [src, setSrc] = useState(() => (inline ? ref : (__imgCache.get(ref) || undefined)));
+  useEffect(() => {
+    if (inline) { setSrc(ref); return undefined; }
+    const cached = __imgCache.get(ref);
+    if (cached) { setSrc(cached); return undefined; }
+    let alive = true;
+    setSrc(undefined);
+    imgGet(ref).then((v) => {
+      if (v) __imgCache.set(ref, v);
+      if (alive) setSrc(v || null);
+    }).catch(() => { if (alive) setSrc(null); });
+    return () => { alive = false; };
+  }, [ref]);
+  return src;
+}
+
+// ---- 주요문 사진: 붙여넣은 사진을 최대한 작게 줄여서 저장한다 ----
+// 긴 변을 줄이고 화질을 단계적으로 낮춰가며, 목표 용량(약 50KB) 이하가 될 때까지 반복한다.
+// (WebP를 지원하는 기기에서는 WebP, 아니면 JPEG. 투명 배경은 흰색으로 채운다.)
+const IMAGE_TARGET_BYTES = 50 * 1024;
+const compressImageFile = (file) => new Promise((resolve, reject) => {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    try {
+      URL.revokeObjectURL(url);
+      const w0 = img.naturalWidth || img.width;
+      const h0 = img.naturalHeight || img.height;
+      if (!w0 || !h0) { reject(new Error("빈 이미지")); return; }
+      const steps = [[1000, 0.6], [900, 0.5], [800, 0.45], [700, 0.4], [600, 0.35], [500, 0.3], [400, 0.3]];
+      let best = null;
+      for (const [maxSide, quality] of steps) {
+        const scale = Math.min(1, maxSide / Math.max(w0, h0));
+        const w = Math.max(1, Math.round(w0 * scale));
+        const h = Math.max(1, Math.round(h0 * scale));
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        let out = c.toDataURL("image/webp", quality);
+        if (!out.startsWith("data:image/webp")) out = c.toDataURL("image/jpeg", quality);
+        if (!best || out.length < best.length) best = out;
+        if (out.length * 0.75 <= IMAGE_TARGET_BYTES) break;
+      }
+      resolve(best);
+    } catch (err) { reject(err); }
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("이미지를 읽지 못했어요")); };
+  img.src = url;
+});
+
+const getPastedImageFiles = (e) => {
+  const cd = e.clipboardData;
+  if (!cd) return [];
+  let out = Array.from(cd.files || []).filter((f) => f.type && f.type.startsWith("image/"));
+  if (!out.length && cd.items) {
+    out = Array.from(cd.items)
+      .filter((it) => it.kind === "file" && it.type && it.type.startsWith("image/"))
+      .map((it) => it.getAsFile())
+      .filter(Boolean);
+  }
+  return out;
+};
+
+const compressAll = async (files) => {
+  const res = [];
+  let failed = 0;
+  for (const f of files) {
+    try { res.push(await saveImageData(await compressImageFile(f))); } catch (err) { failed++; }
+  }
+  if (failed) alert(`사진 ${failed}장을 읽지 못해 넣지 않았어요.`);
+  return res;
+};
+
+// 저장 공간이 가득 차 저장에 실패했을 때, 조용히 사라지지 않도록 알려준다.
+let __lastStorageWarn = 0;
+const warnStorageFull = () => {
+  const now = Date.now();
+  if (now - __lastStorageWarn < 20000) return;
+  __lastStorageWarn = now;
+  alert("저장 공간이 가득 차서 방금 변경 내용을 저장하지 못했어요. 지금 [전체 백업]을 받아 두고, 사진을 일부 지워 주세요.");
+};
+
+// 저장소에서 사진을 읽어 그리는 이미지. 읽는 중이거나 사진이 없으면 자리표시 칸을 보여준다.
+function StoredImg({ refId, style, onClick }) {
+  const src = useStoredImage(refId);
+  if (src) return <img src={src} alt="" onClick={onClick} style={style} />;
+  return (
+    <div
+      onClick={onClick}
+      style={{ ...style, width: 76, display: "flex", alignItems: "center", justifyContent: "center", background: "#1a1f28", color: "#8993a6", fontSize: 11 }}
+    >
+      {src === undefined ? "…" : "사진 없음"}
+    </div>
+  );
+}
+
+function FullImage({ refId }) {
+  const src = useStoredImage(refId);
+  if (!src) return <div style={{ color: "#8993a6", fontSize: 14 }}>{src === undefined ? "불러오는 중…" : "사진을 찾을 수 없어요"}</div>;
+  return <img src={src} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />;
+}
+
+// 주요문에 붙은 사진 썸네일. 누르면 전체화면으로 보고, × 로 삭제한다.
+function QuoteImages({ images, onRemove }) {
+  const [open, setOpen] = useState(null);
+  if (!images || images.length === 0) return null;
+  const overlay = open !== null && images[open] ? ReactDOM.createPortal(
+    <div
+      onClick={() => setOpen(null)}
+      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}
+    >
+      <FullImage refId={images[open]} />
+    </div>,
+    document.body
+  ) : null;
+  return (
+    <>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+        {images.map((ref, i) => (
+          <div key={ref.length > 80 ? i : ref + i} style={{ position: "relative" }}>
+            <StoredImg
+              refId={ref}
+              onClick={() => setOpen(i)}
+              style={{ display: "block", height: 76, maxWidth: 150, objectFit: "cover", borderRadius: 8, border: "1px solid #2a303c", cursor: "pointer" }}
+            />
+            {onRemove && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onRemove(i); }}
+                style={{ position: "absolute", top: -7, right: -7, width: 22, height: 22, borderRadius: "50%", border: "none", background: "#e8544b", color: "#fff", fontSize: 14, fontWeight: 700, padding: 0, lineHeight: "22px", cursor: "pointer" }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {overlay}
+    </>
+  );
+}
+
+// 홈 화면에 보여줄 사진 저장 현황.
+function StorageInfo({ refreshKey }) {
+  const [st, setSt] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    imgStats().then((v) => { if (alive) setSt(v); }).catch(() => {});
+    return () => { alive = false; };
+  }, [refreshKey]);
+  if (!st || st.count === 0) return null;
+  return (
+    <div style={{ fontSize: 11.5, color: "#8993a6", marginBottom: 8 }}>
+      저장된 사진 {st.count}장 · 약 {(st.bytes / 1000000).toFixed(1)}MB
+    </div>
+  );
+}
+
 function SwipeRow({ onNavigate, content, actions, actionWidth = 132, gap = 10, borderRadius = 12 }) {
   const [dragX, setDragX] = useState(0);
   const [open, setOpen] = useState(false);
@@ -493,6 +730,7 @@ function SwipeRow({ onNavigate, content, actions, actionWidth = 132, gap = 10, b
 function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUndo, undo, undoCount }) {
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
+  const [newQuoteImages, setNewQuoteImages] = useState([]);
   const [splitByNumber, setSplitByNumber] = useState(false);
   const [mergeByMajor, setMergeByMajor] = useState(false);
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
@@ -542,14 +780,15 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
     .map((q, idx) => ({ ...q, number: idx + 1 }));
 
-  const addQuote = () => {
+  const addQuote = (extraImages) => {
     const raw = newQuoteText;
     const text = raw.trim();
-    if (!text) return;
+    const images = [...newQuoteImages, ...(Array.isArray(extraImages) ? extraImages : [])];
+    if (!text && images.length === 0) return;
     // 번호나눔이 켜져 있으면 번호 블록 단위로(다음 번호 전까지 한 개), 줄나눔이 켜져 있으면
     // 한 줄씩, 붙여넣기와 똑같은 방식으로 나눠서 주요문을 만든다.
     const splitParser = mergeByMajor ? mergeQuotesByMajorNumber : (splitByNumber ? parseQuotesByNumberBlocks : null);
-    if (splitParser && raw.includes("\n")) {
+    if (!images.length && splitParser && raw.includes("\n")) {
       const parsed = splitParser(raw);
       if (parsed.length > 1) {
         const acceptedTexts = book.quotes.map((q) => q.text);
@@ -570,7 +809,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
         return;
       }
     }
-    if (isDuplicateText(text, book.quotes.map((q) => q.text))) {
+    if (!images.length && isDuplicateText(text, book.quotes.map((q) => q.text))) {
       setNewQuoteNumber("");
       setNewQuoteText("");
       alert("기존 주요문과 80% 이상 비슷한 내용이라 기존 내용을 그대로 두고 추가하지 않았어요.");
@@ -578,10 +817,11 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     }
     const wanted = newQuoteNumber.trim() ? num(newQuoteNumber) : 0;
     const newId = genId();
-    persistQuotes(insertQuoteByNumber(book.quotes, { id: newId, number: wanted, text }, wanted));
+    persistQuotes(insertQuoteByNumber(book.quotes, { id: newId, number: wanted, text, ...(images.length ? { images } : {}) }, wanted));
     pendingScrollIdRef.current = newId;
     setNewQuoteNumber("");
     setNewQuoteText("");
+    setNewQuoteImages([]);
   };
 
   // 삭제할 때 화면이 튀지 않도록, 삭제 직후 스크롤 위치를 원래 자리로 고정한다.
@@ -599,12 +839,13 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     if (targets.length <= 1) return false;
     onSnapshotUndo();
     const mergedText = targets.map((q) => q.text).join("\n");
+    const mergedImages = targets.flatMap((q) => q.images || []);
     const keepId = targets[0].id;
     const mergedNumber = targets[0].number;
     const removeIds = new Set(targets.slice(1).map((q) => q.id));
     const next = book.quotes
       .filter((q) => !removeIds.has(q.id))
-      .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber } : q));
+      .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber, ...(mergedImages.length ? { images: mergedImages } : {}) } : q));
     persistQuotes(next);
     return true;
   };
@@ -634,6 +875,11 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
 
   const updateQuoteText = (id, value) => {
     if (value.trim() === "") {
+      const cur = book.quotes.find((q) => q.id === id);
+      if (cur && cur.images && cur.images.length) {
+        persistQuotes(book.quotes.map((q) => (q.id === id ? { ...q, text: value } : q)));
+        return;
+      }
       onSnapshotUndo();
       // 지워서 삭제할 때도 버튼으로 삭제할 때와 같이, 아래 번호들이 한 칸씩 앞으로 당겨진다.
       deleteQuoteById(id);
@@ -707,12 +953,50 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
     return true;
   };
 
+  // ---- 사진: 붙여넣기 / 사진 고르기 ----
+  const bookRef = useRef(book); bookRef.current = book;
+  const addQuoteRef = useRef(null); addQuoteRef.current = addQuote;
+  const newImageInputRef = useRef(null);
+  const attachImagesToQuote = (id, imgs) => {
+    if (!imgs.length) return;
+    const cur = bookRef.current;
+    onSnapshotUndo();
+    onUpdateBook({ ...cur, quotes: cur.quotes.map((q) => (q.id === id ? { ...q, images: [...(q.images || []), ...imgs] } : q)) });
+  };
+  const pasteIntoQuote = (e, id) => {
+    const files = getPastedImageFiles(e);
+    if (!files.length) return;
+    e.preventDefault();
+    compressAll(files).then((imgs) => attachImagesToQuote(id, imgs));
+  };
+  const removeQuoteImage = (id, idx) => {
+    const cur = bookRef.current;
+    const q = cur.quotes.find((x) => x.id === id);
+    if (!q) return;
+    const nextImgs = (q.images || []).filter((_, i) => i !== idx);
+    onSnapshotUndo();
+    if (nextImgs.length === 0 && !(q.text || "").trim()) { deleteQuoteById(id); return; }
+    onUpdateBook({ ...cur, quotes: cur.quotes.map((x) => (x.id === id ? { ...x, images: nextImgs } : x)) });
+  };
+  const pasteIntoNew = (e) => {
+    const files = getPastedImageFiles(e);
+    if (!files.length) return;
+    e.preventDefault();
+    compressAll(files).then((imgs) => setNewQuoteImages((prev) => [...prev, ...imgs]));
+  };
+  const handlePickedImages = (e) => {
+    const files = Array.from((e.target && e.target.files) || []);
+    e.target.value = "";
+    if (!files.length) return;
+    compressAll(files).then((imgs) => { if (imgs.length && addQuoteRef.current) addQuoteRef.current(imgs); });
+  };
+
   // ✓ 버튼을 눌러야 주요문으로 입력된다. (번호나눔/번호통합이 켜져 있고 여러 줄이면 나눠서 입력)
   const confirmQuote = () => {
     const raw = newQuoteText;
-    if (!raw.trim()) return;
+    if (!raw.trim() && newQuoteImages.length === 0) return;
     if (quoteSearchQuery) setQuoteSearchQuery("");
-    if ((splitByNumber || mergeByMajor) && raw.includes("\n")) {
+    if (newQuoteImages.length === 0 && (splitByNumber || mergeByMajor) && raw.includes("\n")) {
       if (importFromNotesText(raw)) {
         setNewQuoteNumber("");
         setNewQuoteText("");
@@ -950,7 +1234,17 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                 />
                 <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
               </label>
+              <input type="file" accept="image/*" multiple ref={newImageInputRef} onChange={handlePickedImages} style={{ display: "none" }} />
+              <button
+                type="button"
+                onClick={() => newImageInputRef.current && newImageInputRef.current.click()}
+                title="사진 추가"
+                style={{ marginTop: 6, width: 34, height: 30, borderRadius: 8, border: "1px solid #2a303c", background: "#1a1f28", fontSize: 16, padding: 0, cursor: "pointer" }}
+              >
+                📷
+              </button>
             </div>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
             <textarea
               value={newQuoteText}
               ref={quoteTextareaRef}
@@ -959,8 +1253,11 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
               placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
               className="field"
               rows={2}
+              onPaste={pasteIntoNew}
               style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
             />
+            <QuoteImages images={newQuoteImages} onRemove={(i) => setNewQuoteImages((prev) => prev.filter((_, k) => k !== i))} />
+            </div>
           </div>
         </div>
 
@@ -1016,6 +1313,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                       </svg>
                     </button>
                   </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                   <textarea
                     ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
                     value={q.text}
@@ -1026,8 +1324,11 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                     }}
                     className="field"
                     rows={1}
-                    style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+                                        onPaste={(e) => pasteIntoQuote(e, q.id)}
+                    style={{ display: "block", fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
                   />
+                  <QuoteImages images={q.images} onRemove={(i) => removeQuoteImage(q.id, i)} />
+                  </div>
                 </div>
               }
               actions={(close) => (
@@ -1058,6 +1359,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
 function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onSnapshotUndo, undo, undoCount }) {
   const [newQuoteNumber, setNewQuoteNumber] = useState("");
   const [newQuoteText, setNewQuoteText] = useState("");
+  const [newQuoteImages, setNewQuoteImages] = useState([]);
   const [splitByNumber, setSplitByNumber] = useState(false);
   const [mergeByMajor, setMergeByMajor] = useState(false);
   const [quoteSearchQuery, setQuoteSearchQuery] = useState("");
@@ -1107,14 +1409,15 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
     .map((q, idx) => ({ ...q, number: idx + 1 }));
 
-  const addQuote = () => {
+  const addQuote = (extraImages) => {
     const raw = newQuoteText;
     const text = raw.trim();
-    if (!text) return;
+    const images = [...newQuoteImages, ...(Array.isArray(extraImages) ? extraImages : [])];
+    if (!text && images.length === 0) return;
     // 번호나눔이 켜져 있으면 번호 블록 단위로(다음 번호 전까지 한 개), 줄나눔이 켜져 있으면
     // 한 줄씩, 붙여넣기와 똑같은 방식으로 나눠서 주요문을 만든다.
     const splitParser = mergeByMajor ? mergeQuotesByMajorNumber : (splitByNumber ? parseQuotesByNumberBlocks : null);
-    if (splitParser && raw.includes("\n")) {
+    if (!images.length && splitParser && raw.includes("\n")) {
       const parsed = splitParser(raw);
       if (parsed.length > 1) {
         const acceptedTexts = sermon.quotes.map((q) => q.text);
@@ -1135,7 +1438,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
         return;
       }
     }
-    if (isDuplicateText(text, sermon.quotes.map((q) => q.text))) {
+    if (!images.length && isDuplicateText(text, sermon.quotes.map((q) => q.text))) {
       setNewQuoteNumber("");
       setNewQuoteText("");
       alert("기존 주요문과 80% 이상 비슷한 내용이라 기존 내용을 그대로 두고 추가하지 않았어요.");
@@ -1143,10 +1446,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     }
     const wanted = newQuoteNumber.trim() ? num(newQuoteNumber) : 0;
     const newId = genId();
-    persistQuotes(insertQuoteByNumber(sermon.quotes, { id: newId, number: wanted, text }, wanted));
+    persistQuotes(insertQuoteByNumber(sermon.quotes, { id: newId, number: wanted, text, ...(images.length ? { images } : {}) }, wanted));
     pendingScrollIdRef.current = newId;
     setNewQuoteNumber("");
     setNewQuoteText("");
+    setNewQuoteImages([]);
   };
 
   // 삭제할 때 화면이 튀지 않도록, 삭제 직후 스크롤 위치를 원래 자리로 고정한다.
@@ -1164,12 +1468,13 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     if (targets.length <= 1) return false;
     onSnapshotUndo();
     const mergedText = targets.map((q) => q.text).join("\n");
+    const mergedImages = targets.flatMap((q) => q.images || []);
     const keepId = targets[0].id;
     const mergedNumber = targets[0].number;
     const removeIds = new Set(targets.slice(1).map((q) => q.id));
     const next = sermon.quotes
       .filter((q) => !removeIds.has(q.id))
-      .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber } : q));
+      .map((q) => (q.id === keepId ? { ...q, text: mergedText, number: mergedNumber, ...(mergedImages.length ? { images: mergedImages } : {}) } : q));
     persistQuotes(next);
     return true;
   };
@@ -1199,6 +1504,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
 
   const updateQuoteText = (id, value) => {
     if (value.trim() === "") {
+      const cur = sermon.quotes.find((q) => q.id === id);
+      if (cur && cur.images && cur.images.length) {
+        persistQuotes(sermon.quotes.map((q) => (q.id === id ? { ...q, text: value } : q)));
+        return;
+      }
       onSnapshotUndo();
       // 지워서 삭제할 때도 버튼으로 삭제할 때와 같이, 아래 번호들이 한 칸씩 앞으로 당겨진다.
       deleteQuoteById(id);
@@ -1270,12 +1580,50 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     return true;
   };
 
+  // ---- 사진: 붙여넣기 / 사진 고르기 ----
+  const sermonRef = useRef(sermon); sermonRef.current = sermon;
+  const addQuoteRef = useRef(null); addQuoteRef.current = addQuote;
+  const newImageInputRef = useRef(null);
+  const attachImagesToQuote = (id, imgs) => {
+    if (!imgs.length) return;
+    const cur = sermonRef.current;
+    onSnapshotUndo();
+    onUpdateSermon({ ...cur, quotes: cur.quotes.map((q) => (q.id === id ? { ...q, images: [...(q.images || []), ...imgs] } : q)) });
+  };
+  const pasteIntoQuote = (e, id) => {
+    const files = getPastedImageFiles(e);
+    if (!files.length) return;
+    e.preventDefault();
+    compressAll(files).then((imgs) => attachImagesToQuote(id, imgs));
+  };
+  const removeQuoteImage = (id, idx) => {
+    const cur = sermonRef.current;
+    const q = cur.quotes.find((x) => x.id === id);
+    if (!q) return;
+    const nextImgs = (q.images || []).filter((_, i) => i !== idx);
+    onSnapshotUndo();
+    if (nextImgs.length === 0 && !(q.text || "").trim()) { deleteQuoteById(id); return; }
+    onUpdateSermon({ ...cur, quotes: cur.quotes.map((x) => (x.id === id ? { ...x, images: nextImgs } : x)) });
+  };
+  const pasteIntoNew = (e) => {
+    const files = getPastedImageFiles(e);
+    if (!files.length) return;
+    e.preventDefault();
+    compressAll(files).then((imgs) => setNewQuoteImages((prev) => [...prev, ...imgs]));
+  };
+  const handlePickedImages = (e) => {
+    const files = Array.from((e.target && e.target.files) || []);
+    e.target.value = "";
+    if (!files.length) return;
+    compressAll(files).then((imgs) => { if (imgs.length && addQuoteRef.current) addQuoteRef.current(imgs); });
+  };
+
   // ✓ 버튼을 눌러야 주요문으로 입력된다. (번호나눔/번호통합이 켜져 있고 여러 줄이면 나눠서 입력)
   const confirmQuote = () => {
     const raw = newQuoteText;
-    if (!raw.trim()) return;
+    if (!raw.trim() && newQuoteImages.length === 0) return;
     if (quoteSearchQuery) setQuoteSearchQuery("");
-    if ((splitByNumber || mergeByMajor) && raw.includes("\n")) {
+    if (newQuoteImages.length === 0 && (splitByNumber || mergeByMajor) && raw.includes("\n")) {
       if (importFromNotesText(raw)) {
         setNewQuoteNumber("");
         setNewQuoteText("");
@@ -1585,7 +1933,17 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                 />
                 <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
               </label>
+              <input type="file" accept="image/*" multiple ref={newImageInputRef} onChange={handlePickedImages} style={{ display: "none" }} />
+              <button
+                type="button"
+                onClick={() => newImageInputRef.current && newImageInputRef.current.click()}
+                title="사진 추가"
+                style={{ marginTop: 6, width: 34, height: 30, borderRadius: 8, border: "1px solid #2a303c", background: "#1a1f28", fontSize: 16, padding: 0, cursor: "pointer" }}
+              >
+                📷
+              </button>
             </div>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
             <textarea
               value={newQuoteText}
               ref={quoteTextareaRef}
@@ -1594,8 +1952,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
               placeholder="내용 입력 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
               className="field"
               rows={2}
+              onPaste={pasteIntoNew}
               style={{ flex: 1, fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
             />
+            <QuoteImages images={newQuoteImages} onRemove={(i) => setNewQuoteImages((prev) => prev.filter((_, k) => k !== i))} />
+            </div>
           </div>
         </div>
 
@@ -1643,6 +2004,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                       </svg>
                     </button>
                   </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                   <textarea
                     ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
                     value={q.text}
@@ -1653,8 +2015,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                     }}
                     className="field"
                     rows={1}
-                    style={{ flex: 1, fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
+                                        onPaste={(e) => pasteIntoQuote(e, q.id)}
+                    style={{ display: "block", fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
                   />
+                  <QuoteImages images={q.images} onRemove={(i) => removeQuoteImage(q.id, i)} />
+                  </div>
                 </div>
               }
               actions={(close) => (
@@ -1963,20 +2328,59 @@ function App() {
   };
 
   useEffect(() => {
-    try { localStorage.setItem(BOOKS_KEY, JSON.stringify(books)); } catch (e) {}
+    try { localStorage.setItem(BOOKS_KEY, JSON.stringify(books)); } catch (e) { warnStorageFull(); }
   }, [books]);
 
   useEffect(() => {
-    try { localStorage.setItem(QUOTESETS_KEY, JSON.stringify(quoteSets)); } catch (e) {}
+    try { localStorage.setItem(QUOTESETS_KEY, JSON.stringify(quoteSets)); } catch (e) { warnStorageFull(); }
   }, [quoteSets]);
 
   useEffect(() => {
-    try { localStorage.setItem(SERMONS_KEY, JSON.stringify(sermons)); } catch (e) {}
+    try { localStorage.setItem(SERMONS_KEY, JSON.stringify(sermons)); } catch (e) { warnStorageFull(); }
   }, [sermons]);
 
   useEffect(() => {
     try { localStorage.setItem(DELETED_SERMON_DATES_KEY, JSON.stringify(deletedSermonDates)); } catch (e) {}
   }, [deletedSermonDates]);
+
+  // 사진 저장소 정리: (1) 예전 방식으로 주요문 안에 직접 들어 있던 사진을 IndexedDB로 옮기고,
+  // (2) 어디에도 쓰이지 않는 사진(지운 주요문의 사진 등)을 지운다. 앱을 열 때 한 번만 한다.
+  const latestDataRef = useRef({});
+  latestDataRef.current = { books, quoteSets, sermons };
+  useEffect(() => {
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const cur = latestDataRef.current;
+        const protectedIds = new Set();
+        const inline = new Set();
+        [cur.books, cur.quoteSets, cur.sermons].forEach((l) => (l || []).forEach((it) => (it.quotes || []).forEach((q) => (q.images || []).forEach((r) => { if (isInlineImage(r)) inline.add(r); }))));
+        if (inline.size) {
+          const map = new Map();
+          for (const data of inline) {
+            const id = await saveImageData(data);
+            if (!isInlineImage(id)) { map.set(data, id); protectedIds.add(id); }
+          }
+          if (map.size && !cancelled) {
+            setBooks((prev) => replaceImageRefs(prev, map));
+            setQuoteSets((prev) => replaceImageRefs(prev, map));
+            setSermons((prev) => replaceImageRefs(prev, map));
+            await new Promise((r) => setTimeout(r, 600));
+          }
+        }
+        if (cancelled) return;
+        const now = latestDataRef.current;
+        // 데이터를 하나도 못 읽은 상태라면 사진을 지우지 않는다.
+        if (!(now.books || []).length && !(now.quoteSets || []).length && !(now.sermons || []).length) return;
+        const used = collectImageRefs([now.books, now.quoteSets, now.sermons]);
+        protectedIds.forEach((id) => used.add(id));
+        const keys = await imgAllKeys();
+        for (const k of keys || []) { if (!used.has(k) && !__sessionSavedIds.has(k)) { try { await imgDelete(k); __imgCache.delete(k); } catch (e) {} } }
+      } catch (e) {}
+    }, 1500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, []);
 
   // 실수로 삭제했을 때 되돌리기 위한 실행취소 스택 (최근 5단계).
   const undoStackRef = useRef([]);
@@ -2015,10 +2419,19 @@ function App() {
   // 폰을 바꿔도 내용을 그대로 옮길 수 있도록, 앱 전체 데이터를 파일 하나로 백업/복원한다.
   // (브라우저 저장소는 이 기기에만 있어서, 새 기기에서는 이 백업 파일로 불러와야 한다.)
   const fullBackupFileInputRef = useRef(null);
-  const exportFullBackup = () => {
+  const exportFullBackup = async () => {
+    // 사진은 IndexedDB에 있으므로, 쓰이는 사진을 모아 백업 파일 안에 함께 담는다.
+    const images = {};
+    let missing = 0;
+    for (const id of collectImageRefs([books, quoteSets, sermons])) {
+      try {
+        const d = __imgCache.get(id) || (await imgGet(id));
+        if (d) images[id] = d; else missing++;
+      } catch (err) { missing++; }
+    }
     const payload = {
       kind: "reading-summary-full-backup",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       books,
       quoteSets,
@@ -2028,8 +2441,9 @@ function App() {
       bookmarkedBookId,
       bookmarkedQuoteSetId,
       bookmarkedSermonId,
+      images,
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -2037,14 +2451,15 @@ function App() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    if (missing > 0) alert(`사진 ${missing}장은 저장소에서 찾지 못해 백업에 담지 못했어요.`);
   };
   const importFullBackup = (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const data = JSON.parse(evt.target.result);
         if (data.kind !== "reading-summary-full-backup") {
@@ -2054,6 +2469,12 @@ function App() {
         const cnt = (a) => (Array.isArray(a) ? a.length : 0);
         const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString("ko-KR") : "알 수 없음";
         if (!confirm(`백업 시각: ${when}\n독서 ${cnt(data.books)}권 · 명언 ${cnt(data.quoteSets)}개 · 설교 ${cnt(data.sermons)}개\n\n지금 있는 모든 내용을 이 백업 시점의 상태로 되돌립니다. 계속할까요?`)) return;
+        // 백업에 담긴 사진을 먼저 저장소에 되살린다.
+        let imgFailed = 0;
+        const imgs = data.images && typeof data.images === "object" ? data.images : {};
+        for (const [id, d] of Object.entries(imgs)) {
+          try { await imgPut(id, d); __imgCache.set(id, d); } catch (err) { imgFailed++; }
+        }
         setBooks(Array.isArray(data.books) ? data.books : []);
         setQuoteSets(Array.isArray(data.quoteSets) ? data.quoteSets : []);
         setSermons(Array.isArray(data.sermons) ? data.sermons : []);
@@ -2067,7 +2488,7 @@ function App() {
         setCurrentQuoteSetId(null); setQuoteSetView("index");
         setCurrentSermonId(null); setSermonView("list");
         setMainSection("home");
-        alert("백업 시점의 상태로 되돌렸어요.");
+        alert(imgFailed ? `백업 시점의 상태로 되돌렸어요. 다만 사진 ${imgFailed}장은 저장하지 못했어요.` : "백업 시점의 상태로 되돌렸어요.");
       } catch (err) {
         alert("백업 파일을 읽지 못했어요: " + (err.message || err));
       }
@@ -2263,6 +2684,7 @@ function App() {
             <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>
               폰을 바꾸실 땐, 바꾸기 전에 여기서 백업하고 새 폰에서 복원해주세요.
             </div>
+            <StorageInfo refreshKey={Array.from(collectImageRefs([books, quoteSets, sermons])).join("|")} />
             <div style={{ display: "flex", gap: 8 }}>
               <input type="file" accept="application/json" ref={fullBackupFileInputRef} onChange={importFullBackup} style={{ display: "none" }} />
               <button
