@@ -335,7 +335,7 @@ function loadBooks() {
   } catch (e) { return seedBooks; }
 }
 
-// ---- 명언 (독서완료와 같은 형식의 별도 모음) ----
+// ---- 명언 (독서와 같은 형식의 별도 모음) ----
 const QUOTESETS_KEY = "reading-summary-quotesets-v1";
 function loadQuoteSets() {
   try {
@@ -2197,8 +2197,11 @@ function App() {
   const [sectionLabels, setSectionLabels] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(SECTION_LABELS_KEY));
-      return { reading: "독서완료", sermon: "교회설교요약", quotes: "명언", ...(saved || {}) };
-    } catch (e) { return { reading: "독서완료", sermon: "교회설교요약", quotes: "명언" }; }
+      const merged = { reading: "독서", sermon: "교회설교요약", quotes: "명언", ...(saved || {}) };
+      // 예전 이름 "독서완료"로 저장돼 있던 기기에서도 "독서"로 바뀌게 한다.
+      if (merged.reading === "독서완료") merged.reading = "독서";
+      return merged;
+    } catch (e) { return { reading: "독서", sermon: "교회설교요약", quotes: "명언" }; }
   });
   useEffect(() => {
     try { localStorage.setItem(SECTION_LABELS_KEY, JSON.stringify(sectionLabels)); } catch (e) {}
@@ -2230,7 +2233,7 @@ function App() {
 
   // 목록 전체를 한 파일로 내려받기/가져오기 (항목마다 시트 하나씩).
   const [bookListFileInputRef, quoteSetListFileInputRef, sermonListFileInputRef] = [useRef(null), useRef(null), useRef(null)];
-  const exportBookList = () => XLSX.writeFile(buildMultiItemWorkbook(books), buildFileName("독서완료_전체"));
+  const exportBookList = () => XLSX.writeFile(buildMultiItemWorkbook(books), buildFileName("독서_전체"));
   const exportQuoteSetList = () => XLSX.writeFile(buildMultiItemWorkbook(quoteSets), buildFileName("명언_전체"));
   const exportSermonList = () => XLSX.writeFile(buildMultiItemWorkbook(sermons.map((s) => ({ title: s.title || s.date, quotes: s.quotes }))), buildFileName("교회설교요약_전체"));
   const importListFile = (file, onDone) => {
@@ -2445,7 +2448,7 @@ function App() {
         setQuoteSets(Array.isArray(data.quoteSets) ? data.quoteSets : []);
         setSermons(Array.isArray(data.sermons) ? data.sermons : []);
         setDeletedSermonDates(Array.isArray(data.deletedSermonDates) ? data.deletedSermonDates : []);
-        if (data.sectionLabels) setSectionLabels((prev) => ({ ...prev, ...data.sectionLabels }));
+        if (data.sectionLabels) setSectionLabels((prev) => ({ ...prev, ...data.sectionLabels, ...(data.sectionLabels.reading === "독서완료" ? { reading: "독서" } : {}) }));
         setBookmarkedBookId(data.bookmarkedBookId || null);
         setBookmarkedQuoteSetId(data.bookmarkedQuoteSetId || null);
         setBookmarkedSermonId(data.bookmarkedSermonId || null);
