@@ -354,6 +354,17 @@ function loadReligionSets() {
   } catch (e) { return []; }
 }
 const RELIGION_ICON = "🙏";
+const PRAYERS_KEY = "reading-summary-prayers-v1";
+const DEFAULT_PRAYERS = {
+  creed: "전능하사 천지를 만드신 하나님 아버지를 내가 믿사오며,\n그 외아들 우리 주 예수 그리스도를 믿사오니, 성령으로 잉태하사 동정녀 마리아에게 나시고, 본디오 빌라도에게 고난을 받으사, 십자가에 못 박혀 죽으시고, 장사한 지 사흘 만에 죽은 자 가운데서 다시 살아나시며, 하늘에 오르사, 전능하신 하나님 우편에 앉아 계시다가, 저리로서 산 자와 죽은 자를 심판하러 오시리라.\n성령을 믿사오며, 거룩한 공회와, 성도가 서로 교통하는 것과, 죄를 용서받는 것과, 몸이 다시 사는 것과, 영원히 사는 것을 믿사옵나이다. 아멘.",
+  lord: "하늘에 계신 우리 아버지여, 이름이 거룩히 여김을 받으시오며, 나라가 임하시오며, 뜻이 하늘에서 이루어진 것 같이 땅에서도 이루어지이다.\n오늘 우리에게 일용할 양식을 주시옵고, 우리가 우리에게 죄 지은 자를 사하여 준 것 같이 우리 죄를 사하여 주시옵고, 우리를 시험에 들게 하지 마시옵고 다만 악에서 구하시옵소서.\n나라와 권세와 영광이 아버지께 영원히 있사옵나이다. 아멘.",
+};
+function loadPrayers() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PRAYERS_KEY));
+    return { ...DEFAULT_PRAYERS, ...(saved && typeof saved === "object" ? saved : {}) };
+  } catch (e) { return { ...DEFAULT_PRAYERS }; }
+}
 
 // ---- 교회설교요약 ----
 const SERMONS_KEY = "reading-summary-sermons-v1";
@@ -623,6 +634,34 @@ const isBackspaceAtStart = (e) => {
 };
 
 // 주요문에 붙은 사진 썸네일. 누르면 전체화면으로 본다. (지우기는 글 칸 맨 앞에서 백스페이스)
+// 주요문 안의 인터넷 주소를 찾아 탭하면 바로 열리는 링크로 보여준다. (글 자체는 그대로 수정 가능)
+function extractLinks(text) {
+  const found = [];
+  const re = /(?:https?:\/\/|www\.)[A-Za-z0-9\-._~:\/?#@!$&*+,;=%()]+/g;
+  let m;
+  while ((m = re.exec(text || "")) !== null) {
+    let u = m[0].replace(/[.,;:!?)]+$/, "");
+    if (!u) continue;
+    const href = /^https?:/i.test(u) ? u : "https://" + u;
+    if (!found.some((f) => f.href === href)) found.push({ label: u, href });
+  }
+  return found;
+}
+function QuoteLinks({ text }) {
+  const links = extractLinks(text);
+  if (!links.length) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "2px 8px 4px" }}>
+      {links.map((l) => (
+        <a key={l.href} href={l.href}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = l.href; }}
+          style={{ color: "#6aa9ff", fontSize: 14, fontWeight: 600, textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
+          🔗 {l.label}
+        </a>
+      ))}
+    </div>
+  );
+}
 function QuoteImages({ images }) {
   const [open, setOpen] = useState(null);
   if (!images || images.length === 0) return null;
@@ -1320,6 +1359,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                     onKeyDown={(e) => { if (q.images && q.images.length && isBackspaceAtStart(e)) { e.preventDefault(); removeQuoteImage(q.id, q.images.length - 1); } }}
                     style={{ display: "block", fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
                   />
+                  <QuoteLinks text={q.text} />
                   </div>
                 </div>
               }
@@ -1995,6 +2035,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                     onKeyDown={(e) => { if (q.images && q.images.length && isBackspaceAtStart(e)) { e.preventDefault(); removeQuoteImage(q.id, q.images.length - 1); } }}
                     style={{ display: "block", fontSize: 18, color: "#e7eaf0", lineHeight: "28px", fontWeight: 600, resize: "none", overflow: "hidden", minHeight: 0, padding: "4px 8px" }}
                   />
+                  <QuoteLinks text={q.text} />
                   </div>
                 </div>
               }
@@ -2440,6 +2481,7 @@ function App() {
       books,
       quoteSets,
       religionSets,
+      prayers,
       sermons,
       deletedSermonDates,
       sectionLabels,
@@ -2484,6 +2526,7 @@ function App() {
         setBooks(Array.isArray(data.books) ? data.books : []);
         setQuoteSets(Array.isArray(data.quoteSets) ? data.quoteSets : []);
         setReligionSets(Array.isArray(data.religionSets) ? data.religionSets : []);
+        setPrayers({ ...DEFAULT_PRAYERS, ...(data.prayers && typeof data.prayers === "object" ? data.prayers : {}) });
         setSermons(Array.isArray(data.sermons) ? data.sermons : []);
         setDeletedSermonDates(Array.isArray(data.deletedSermonDates) ? data.deletedSermonDates : []);
         if (data.sectionLabels) setSectionLabels((prev) => ({ ...prev, ...data.sectionLabels, ...(data.sectionLabels.reading === "독서완료" ? { reading: "독서" } : {}) }));
@@ -2643,9 +2686,14 @@ function App() {
   };
 
   const [religionSetListSearchQuery, setReligionSetListSearchQuery] = useState("");
+  const [prayers, setPrayers] = useState(loadPrayers);
+  const [openPrayer, setOpenPrayer] = useState(null); // null | 'creed' | 'lord'
+  useEffect(() => {
+    try { localStorage.setItem(PRAYERS_KEY, JSON.stringify(prayers)); } catch (e) { warnStorageFull(); }
+  }, [prayers]);
   // 홈 화면의 "새로추가" 아이콘에서 바로 새 종교을 만들고, 제목을 넣을 수 있게 바로 그 안으로 들어간다.
   const quickAddReligionSet = () => {
-    const maxNum = religionSets.reduce((m, s) => Math.max(m, num(s.number) || 0), 0);
+    const maxNum = religionSets.reduce((m, s) => Math.max(m, num(s.number) || 0), 1); // 1번은 교회설교요약
     const set = { id: genId(), number: maxNum + 1, title: "", learnedCount: 0, bookmarkQuoteId: null, readDate: "", quotes: [] };
     setReligionSets((prev) => [...prev, set]);
     setCurrentReligionSetId(set.id);
@@ -2705,27 +2753,13 @@ function App() {
 
           <div
             onClick={() => { setMainSection("religion"); setReligionSetView("index"); }}
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", marginBottom: 10, cursor: "pointer" }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", cursor: "pointer" }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 30 }}>{RELIGION_ICON}</span>
               <div>
                 <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>{sectionLabels.religion}</div>
                 <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{religionSets.length}개의 종교 모음</div>
-              </div>
-            </div>
-            <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
-          </div>
-
-          <div
-            onClick={() => setMainSection("sermon")}
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", cursor: "pointer" }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 30 }}>⛪</span>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>{sectionLabels.sermon}</div>
-                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{sermons.length}개의 주일 설교</div>
               </div>
             </div>
             <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
@@ -2776,7 +2810,7 @@ function App() {
             onDeleteSermon={deleteSermon}
             newSermonDate={newSermonDate}
             onChangeNewSermonDate={setNewSermonDate}
-            onBackToReading={() => setMainSection("home")}
+            onBackToReading={() => { setMainSection("religion"); setReligionSetView("index"); }}
             undo={undo}
             undoCount={undoCount}
             onImport={importSermonList}
@@ -2994,6 +3028,30 @@ function App() {
             </div>
             <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>제목을 눌러 주요문을 보고, 아래에서 새 종교 모음을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
 
+            <div style={{ display: "flex", gap: 6, marginBottom: openPrayer ? 6 : 10 }}>
+              {[["creed", "사도신경"], ["lord", "주의 기도"]].map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setOpenPrayer((cur) => (cur === k ? null : k))}
+                  style={{ padding: "3px 9px", borderRadius: 8, border: "1px solid " + (openPrayer === k ? "#c9974a" : "#262c37"), background: openPrayer === k ? "#2a2417" : "#1a1f28", color: openPrayer === k ? "#c9974a" : "#e7eaf0", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", lineHeight: "18px" }}>
+                  {label} <span style={{ fontSize: 10, color: "#8993a6" }}>{openPrayer === k ? "▾" : "▸"}</span>
+                </button>
+              ))}
+            </div>
+            {openPrayer && (
+              <div style={{ marginBottom: 14 }}>
+                <textarea
+                  value={prayers[openPrayer]}
+                  onChange={(e) => { const v = e.target.value; setPrayers((prev) => ({ ...prev, [openPrayer]: v })); }}
+                  rows={1}
+                  ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; } }}
+                  className="field"
+                  style={{ fontSize: 15, lineHeight: "24px", padding: "10px 12px", resize: "none", overflow: "hidden", display: "block" }}
+                />
+                <div style={{ textAlign: "right", marginTop: 4 }}>
+                  <button type="button" onClick={() => { if (confirm("처음 상태(기본 본문)로 되돌릴까요?")) setPrayers((prev) => ({ ...prev, [openPrayer]: DEFAULT_PRAYERS[openPrayer] })); }}
+                    style={{ border: "none", background: "none", color: "#8993a6", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>처음 상태로 되돌리기</button>
+                </div>
+              </div>
+            )}
             <input
               value={religionSetListSearchQuery}
               onChange={(e) => setReligionSetListSearchQuery(e.target.value)}
@@ -3002,6 +3060,20 @@ function App() {
               style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
             />
 
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
+                <div style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "5px 0", border: "1px solid transparent" }}>1</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div onClick={() => setMainSection("sermon")} style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, cursor: "pointer" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 19, fontWeight: 700, color: "#e7eaf0" }}>⛪ {sectionLabels.sermon}</div>
+                    <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>{sermons.length}개의 주일 설교</div>
+                  </div>
+                  <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
+                </div>
+              </div>
+            </div>
             {religionSets.length === 0 && (
               <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 종교이 없어요.</div>
             )}
