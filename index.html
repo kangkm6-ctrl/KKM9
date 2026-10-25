@@ -3046,10 +3046,6 @@ function App() {
                   className="field"
                   style={{ fontSize: 15, lineHeight: "24px", padding: "10px 12px", resize: "none", overflow: "hidden", display: "block" }}
                 />
-                <div style={{ textAlign: "right", marginTop: 4 }}>
-                  <button type="button" onClick={() => { if (confirm("처음 상태(기본 본문)로 되돌릴까요?")) setPrayers((prev) => ({ ...prev, [openPrayer]: DEFAULT_PRAYERS[openPrayer] })); }}
-                    style={{ border: "none", background: "none", color: "#8993a6", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>처음 상태로 되돌리기</button>
-                </div>
               </div>
             )}
             <input
