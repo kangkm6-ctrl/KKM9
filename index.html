@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>독서핵심모음집</title>
+<title>핵심모음집</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="독서핵심모음집" />
+<meta name="apple-mobile-web-app-title" content="핵심모음집" />
 <meta name="theme-color" content="#12151b" />
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
 <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
@@ -344,6 +344,16 @@ function loadQuoteSets() {
   } catch (e) { return []; }
 }
 const QUOTES_ICON = "📜";
+
+// ---- 종교 (독서와 같은 형식의 별도 모음) ----
+const RELIGION_KEY = "reading-summary-religion-v1";
+function loadReligionSets() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(RELIGION_KEY));
+    return Array.isArray(saved) ? saved : [];
+  } catch (e) { return []; }
+}
+const RELIGION_ICON = "🙏";
 
 // ---- 교회설교요약 ----
 const SERMONS_KEY = "reading-summary-sermons-v1";
@@ -2191,17 +2201,21 @@ function App() {
   const [quoteSetView, setQuoteSetView] = useState("index"); // 'index' | 'book'
   const [currentQuoteSetId, setCurrentQuoteSetId] = useState(null);
 
-  const [mainSection, setMainSection] = useState("home"); // 'home' | 'reading' | 'sermon' | 'quotes'
+  const [religionSets, setReligionSets] = useState(loadReligionSets);
+  const [religionSetView, setReligionSetView] = useState("index"); // 'index' | 'book'
+  const [currentReligionSetId, setCurrentReligionSetId] = useState(null);
+
+  const [mainSection, setMainSection] = useState("home"); // 'home' | 'reading' | 'sermon' | 'quotes' | 'religion'
 
   const SECTION_LABELS_KEY = "reading-summary-section-labels-v1";
   const [sectionLabels, setSectionLabels] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(SECTION_LABELS_KEY));
-      const merged = { reading: "독서", sermon: "교회설교요약", quotes: "명언", ...(saved || {}) };
+      const merged = { reading: "독서", sermon: "교회설교요약", quotes: "명언", religion: "종교", ...(saved || {}) };
       // 예전 이름 "독서완료"로 저장돼 있던 기기에서도 "독서"로 바뀌게 한다.
       if (merged.reading === "독서완료") merged.reading = "독서";
       return merged;
-    } catch (e) { return { reading: "독서", sermon: "교회설교요약", quotes: "명언" }; }
+    } catch (e) { return { reading: "독서", sermon: "교회설교요약", quotes: "명언", religion: "종교" }; }
   });
   useEffect(() => {
     try { localStorage.setItem(SECTION_LABELS_KEY, JSON.stringify(sectionLabels)); } catch (e) {}
@@ -2217,24 +2231,30 @@ function App() {
   // 목록(책/명언/설교) 화면에서 "이 항목이 책갈피"로 지정된 항목 — 화면마다 하나씩만.
   const [bookmarkedBookId, setBookmarkedBookId] = useState(() => { try { return localStorage.getItem("reading-summary-bm-book") || null; } catch (e) { return null; } });
   const [bookmarkedQuoteSetId, setBookmarkedQuoteSetId] = useState(() => { try { return localStorage.getItem("reading-summary-bm-quoteset") || null; } catch (e) { return null; } });
+  const [bookmarkedReligionSetId, setBookmarkedReligionSetId] = useState(() => { try { return localStorage.getItem("reading-summary-bm-religion") || null; } catch (e) { return null; } });
   const [bookmarkedSermonId, setBookmarkedSermonId] = useState(() => { try { return localStorage.getItem("reading-summary-bm-sermon") || null; } catch (e) { return null; } });
   useEffect(() => { try { bookmarkedBookId ? localStorage.setItem("reading-summary-bm-book", bookmarkedBookId) : localStorage.removeItem("reading-summary-bm-book"); } catch (e) {} }, [bookmarkedBookId]);
   useEffect(() => { try { bookmarkedQuoteSetId ? localStorage.setItem("reading-summary-bm-quoteset", bookmarkedQuoteSetId) : localStorage.removeItem("reading-summary-bm-quoteset"); } catch (e) {} }, [bookmarkedQuoteSetId]);
+  useEffect(() => { try { bookmarkedReligionSetId ? localStorage.setItem("reading-summary-bm-religion", bookmarkedReligionSetId) : localStorage.removeItem("reading-summary-bm-religion"); } catch (e) {} }, [bookmarkedReligionSetId]);
   useEffect(() => { try { bookmarkedSermonId ? localStorage.setItem("reading-summary-bm-sermon", bookmarkedSermonId) : localStorage.removeItem("reading-summary-bm-sermon"); } catch (e) {} }, [bookmarkedSermonId]);
   const toggleBookmarkedBook = (id) => setBookmarkedBookId((cur) => (cur === id ? null : id));
   const toggleBookmarkedQuoteSet = (id) => setBookmarkedQuoteSetId((cur) => (cur === id ? null : id));
+  const toggleBookmarkedReligionSet = (id) => setBookmarkedReligionSetId((cur) => (cur === id ? null : id));
   const toggleBookmarkedSermon = (id) => setBookmarkedSermonId((cur) => (cur === id ? null : id));
   const bookListRowRefs = useRef({});
   const quoteSetListRowRefs = useRef({});
+  const religionSetListRowRefs = useRef({});
   const sermonListRowRefs = useRef({});
   const jumpToBookmarkedBook = () => { const n = bookmarkedBookId && bookListRowRefs.current[bookmarkedBookId]; if (n) n.scrollIntoView({ behavior: "smooth", block: "center" }); };
   const jumpToBookmarkedQuoteSet = () => { const n = bookmarkedQuoteSetId && quoteSetListRowRefs.current[bookmarkedQuoteSetId]; if (n) n.scrollIntoView({ behavior: "smooth", block: "center" }); };
+  const jumpToBookmarkedReligionSet = () => { const n = bookmarkedReligionSetId && religionSetListRowRefs.current[bookmarkedReligionSetId]; if (n) n.scrollIntoView({ behavior: "smooth", block: "center" }); };
   const jumpToBookmarkedSermon = () => { const n = bookmarkedSermonId && sermonListRowRefs.current[bookmarkedSermonId]; if (n) n.scrollIntoView({ behavior: "smooth", block: "center" }); };
 
   // 목록 전체를 한 파일로 내려받기/가져오기 (항목마다 시트 하나씩).
-  const [bookListFileInputRef, quoteSetListFileInputRef, sermonListFileInputRef] = [useRef(null), useRef(null), useRef(null)];
+  const [bookListFileInputRef, quoteSetListFileInputRef, sermonListFileInputRef, religionSetListFileInputRef] = [useRef(null), useRef(null), useRef(null), useRef(null)];
   const exportBookList = () => XLSX.writeFile(buildMultiItemWorkbook(books), buildFileName("독서_전체"));
   const exportQuoteSetList = () => XLSX.writeFile(buildMultiItemWorkbook(quoteSets), buildFileName("명언_전체"));
+  const exportReligionSetList = () => XLSX.writeFile(buildMultiItemWorkbook(religionSets), buildFileName("종교_전체"));
   const exportSermonList = () => XLSX.writeFile(buildMultiItemWorkbook(sermons.map((s) => ({ title: s.title || s.date, quotes: s.quotes }))), buildFileName("교회설교요약_전체"));
   const importListFile = (file, onDone) => {
     const reader = new FileReader();
@@ -2264,6 +2284,14 @@ function App() {
     importListFile(file, (items) => {
       const now = new Date().toISOString().slice(0, 10);
       setQuoteSets((prev) => [...prev, ...items.map((it) => ({ id: genId(), title: it.sheetName, learnedCount: 0, bookmarkQuoteId: null, readDate: now, quotes: it.quotes }))]);
+    });
+  };
+  const importReligionSetList = (e) => {
+    const file = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    importListFile(file, (items) => {
+      const now = new Date().toISOString().slice(0, 10);
+      setReligionSets((prev) => [...prev, ...items.map((it) => ({ id: genId(), title: it.sheetName, learnedCount: 0, bookmarkQuoteId: null, readDate: now, quotes: it.quotes }))]);
     });
   };
   const importSermonList = (e) => {
@@ -2305,6 +2333,10 @@ function App() {
   }, [quoteSets]);
 
   useEffect(() => {
+    try { localStorage.setItem(RELIGION_KEY, JSON.stringify(religionSets)); } catch (e) { warnStorageFull(); }
+  }, [religionSets]);
+
+  useEffect(() => {
     try { localStorage.setItem(SERMONS_KEY, JSON.stringify(sermons)); } catch (e) { warnStorageFull(); }
   }, [sermons]);
 
@@ -2315,7 +2347,7 @@ function App() {
   // 사진 저장소 정리: (1) 예전 방식으로 주요문 안에 직접 들어 있던 사진을 IndexedDB로 옮기고,
   // (2) 어디에도 쓰이지 않는 사진(지운 주요문의 사진 등)을 지운다. 앱을 열 때 한 번만 한다.
   const latestDataRef = useRef({});
-  latestDataRef.current = { books, quoteSets, sermons };
+  latestDataRef.current = { books, quoteSets, religionSets, sermons };
   useEffect(() => {
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
     let cancelled = false;
@@ -2324,7 +2356,7 @@ function App() {
         const cur = latestDataRef.current;
         const protectedIds = new Set();
         const inline = new Set();
-        [cur.books, cur.quoteSets, cur.sermons].forEach((l) => (l || []).forEach((it) => (it.quotes || []).forEach((q) => (q.images || []).forEach((r) => { if (isInlineImage(r)) inline.add(r); }))));
+        [cur.books, cur.quoteSets, cur.religionSets, cur.sermons].forEach((l) => (l || []).forEach((it) => (it.quotes || []).forEach((q) => (q.images || []).forEach((r) => { if (isInlineImage(r)) inline.add(r); }))));
         if (inline.size) {
           const map = new Map();
           for (const data of inline) {
@@ -2334,6 +2366,7 @@ function App() {
           if (map.size && !cancelled) {
             setBooks((prev) => replaceImageRefs(prev, map));
             setQuoteSets((prev) => replaceImageRefs(prev, map));
+            setReligionSets((prev) => replaceImageRefs(prev, map));
             setSermons((prev) => replaceImageRefs(prev, map));
             await new Promise((r) => setTimeout(r, 600));
           }
@@ -2341,8 +2374,8 @@ function App() {
         if (cancelled) return;
         const now = latestDataRef.current;
         // 데이터를 하나도 못 읽은 상태라면 사진을 지우지 않는다.
-        if (!(now.books || []).length && !(now.quoteSets || []).length && !(now.sermons || []).length) return;
-        const used = collectImageRefs([now.books, now.quoteSets, now.sermons]);
+        if (!(now.books || []).length && !(now.quoteSets || []).length && !(now.religionSets || []).length && !(now.sermons || []).length) return;
+        const used = collectImageRefs([now.books, now.quoteSets, now.religionSets, now.sermons]);
         protectedIds.forEach((id) => used.add(id));
         const keys = await imgAllKeys();
         for (const k of keys || []) { if (!used.has(k) && !__sessionSavedIds.has(k)) { try { await imgDelete(k); __imgCache.delete(k); } catch (e) {} } }
@@ -2360,6 +2393,7 @@ function App() {
       {
         books: JSON.parse(JSON.stringify(books)),
         quoteSets: JSON.parse(JSON.stringify(quoteSets)),
+        religionSets: JSON.parse(JSON.stringify(religionSets)),
         sermons: JSON.parse(JSON.stringify(sermons)),
         deletedSermonDates: [...deletedSermonDates],
       },
@@ -2373,6 +2407,7 @@ function App() {
     undoStackRef.current = stack.slice(0, -1);
     setBooks(last.books);
     setQuoteSets(last.quoteSets || []);
+    setReligionSets(last.religionSets || []);
     setSermons(last.sermons);
     setDeletedSermonDates(last.deletedSermonDates || []);
     setUndoCount(undoStackRef.current.length);
@@ -2383,7 +2418,7 @@ function App() {
   useEffect(() => {
     undoStackRef.current = [];
     setUndoCount(0);
-  }, [mainSection, mainView, quoteSetView, sermonView]);
+  }, [mainSection, mainView, quoteSetView, religionSetView, sermonView]);
 
   // 폰을 바꿔도 내용을 그대로 옮길 수 있도록, 앱 전체 데이터를 파일 하나로 백업/복원한다.
   // (브라우저 저장소는 이 기기에만 있어서, 새 기기에서는 이 백업 파일로 불러와야 한다.)
@@ -2392,7 +2427,7 @@ function App() {
     // 사진은 IndexedDB에 있으므로, 쓰이는 사진을 모아 백업 파일 안에 함께 담는다.
     const images = {};
     let missing = 0;
-    for (const id of collectImageRefs([books, quoteSets, sermons])) {
+    for (const id of collectImageRefs([books, quoteSets, religionSets, sermons])) {
       try {
         const d = __imgCache.get(id) || (await imgGet(id));
         if (d) images[id] = d; else missing++;
@@ -2404,11 +2439,13 @@ function App() {
       exportedAt: new Date().toISOString(),
       books,
       quoteSets,
+      religionSets,
       sermons,
       deletedSermonDates,
       sectionLabels,
       bookmarkedBookId,
       bookmarkedQuoteSetId,
+      bookmarkedReligionSetId,
       bookmarkedSermonId,
       images,
     };
@@ -2437,7 +2474,7 @@ function App() {
         }
         const cnt = (a) => (Array.isArray(a) ? a.length : 0);
         const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString("ko-KR") : "알 수 없음";
-        if (!confirm(`백업 시각: ${when}\n독서 ${cnt(data.books)}권 · 명언 ${cnt(data.quoteSets)}개 · 설교 ${cnt(data.sermons)}개\n\n지금 있는 모든 내용을 이 백업 시점의 상태로 되돌립니다. 계속할까요?`)) return;
+        if (!confirm(`백업 시각: ${when}\n독서 ${cnt(data.books)}권 · 명언 ${cnt(data.quoteSets)}개 · 종교 ${cnt(data.religionSets)}개 · 설교 ${cnt(data.sermons)}개\n\n지금 있는 모든 내용을 이 백업 시점의 상태로 되돌립니다. 계속할까요?`)) return;
         // 백업에 담긴 사진을 먼저 저장소에 되살린다.
         let imgFailed = 0;
         const imgs = data.images && typeof data.images === "object" ? data.images : {};
@@ -2446,15 +2483,18 @@ function App() {
         }
         setBooks(Array.isArray(data.books) ? data.books : []);
         setQuoteSets(Array.isArray(data.quoteSets) ? data.quoteSets : []);
+        setReligionSets(Array.isArray(data.religionSets) ? data.religionSets : []);
         setSermons(Array.isArray(data.sermons) ? data.sermons : []);
         setDeletedSermonDates(Array.isArray(data.deletedSermonDates) ? data.deletedSermonDates : []);
         if (data.sectionLabels) setSectionLabels((prev) => ({ ...prev, ...data.sectionLabels, ...(data.sectionLabels.reading === "독서완료" ? { reading: "독서" } : {}) }));
         setBookmarkedBookId(data.bookmarkedBookId || null);
         setBookmarkedQuoteSetId(data.bookmarkedQuoteSetId || null);
+        setBookmarkedReligionSetId(data.bookmarkedReligionSetId || null);
         setBookmarkedSermonId(data.bookmarkedSermonId || null);
         // 복원 후 존재하지 않는 항목을 열어 둔 채로 남지 않도록 첫 화면으로 돌린다.
         setCurrentBookId(null); setMainView("index");
         setCurrentQuoteSetId(null); setQuoteSetView("index");
+        setCurrentReligionSetId(null); setReligionSetView("index");
         setCurrentSermonId(null); setSermonView("list");
         setMainSection("home");
         alert(imgFailed ? `백업 시점의 상태로 되돌렸어요. 다만 사진 ${imgFailed}장은 저장하지 못했어요.` : "백업 시점의 상태로 되돌렸어요.");
@@ -2503,7 +2543,7 @@ function App() {
       ctx.font = `800 ${BASE}px 'Pretendard','Apple SD Gothic Neo',sans-serif`;
       const textWidth = ctx.measureText(el.textContent).width;
       if (textWidth > 0 && available > 0) {
-        setHomeTitleSize(Math.floor(BASE * (available / textWidth) * SAFETY));
+        void BASE; void SAFETY; // 제목은 40px 고정
       }
     };
     measure();
@@ -2514,6 +2554,7 @@ function App() {
 
   const currentBook = books.find((b) => b.id === currentBookId) || null;
   const currentQuoteSet = quoteSets.find((b) => b.id === currentQuoteSetId) || null;
+  const currentReligionSet = religionSets.find((b) => b.id === currentReligionSetId) || null;
   const currentSermon = sermons.find((s) => s.id === currentSermonId) || null;
   const preacherOptions = Array.from(new Set([DEFAULT_PREACHER, ...sermons.map((s) => s.preacher).filter(Boolean)]));
 
@@ -2531,6 +2572,13 @@ function App() {
   const renameQuoteSet = (title) => {
     if (!currentQuoteSet) return;
     updateQuoteSet({ ...currentQuoteSet, title });
+  };
+  const updateReligionSet = (nextSet) => {
+    setReligionSets((prev) => prev.map((b) => (b.id === nextSet.id ? nextSet : b)));
+  };
+  const renameReligionSet = (title) => {
+    if (!currentReligionSet) return;
+    updateReligionSet({ ...currentReligionSet, title });
   };
 
   const updateSermon = (nextSermon) => {
@@ -2594,6 +2642,26 @@ function App() {
     setQuoteSets((prev) => prev.filter((b) => b.id !== id));
   };
 
+  const [religionSetListSearchQuery, setReligionSetListSearchQuery] = useState("");
+  // 홈 화면의 "새로추가" 아이콘에서 바로 새 종교을 만들고, 제목을 넣을 수 있게 바로 그 안으로 들어간다.
+  const quickAddReligionSet = () => {
+    const maxNum = religionSets.reduce((m, s) => Math.max(m, num(s.number) || 0), 0);
+    const set = { id: genId(), number: maxNum + 1, title: "", learnedCount: 0, bookmarkQuoteId: null, readDate: "", quotes: [] };
+    setReligionSets((prev) => [...prev, set]);
+    setCurrentReligionSetId(set.id);
+    setMainSection("religion");
+    setReligionSetView("book");
+  };
+
+  const updateReligionSetNumber = (id, value) => {
+    setReligionSets((prev) => prev.map((s) => (s.id === id ? { ...s, number: value.trim() === "" ? value : num(value) } : s)));
+  };
+
+  const deleteReligionSet = (id) => {
+    pushUndoSnapshot();
+    setReligionSets((prev) => prev.filter((b) => b.id !== id));
+  };
+
   if (mainSection === "home") {
     return (
       <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
@@ -2604,8 +2672,8 @@ function App() {
           .iconbtn { background:none; border:none; cursor:pointer; }
         `}</style>
         <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 22px) 16px 20px" }}>
-          <div ref={homeTitleRef} style={{ fontSize: homeTitleSize, fontWeight: 800, marginBottom: 4, whiteSpace: "nowrap", display: "inline-block" }}>📚 독서핵심모음집</div>
-          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18 }}>아래에서 메뉴를 선택하세요.</div>
+          <div ref={homeTitleRef} style={{ fontSize: 40, fontWeight: 800, marginBottom: 4, whiteSpace: "nowrap", textAlign: "center" }}>📚 핵심모음집</div>
+          <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 18, textAlign: "center" }}>아래에서 메뉴를 선택하세요.</div>
 
           <div
             onClick={() => { setMainSection("reading"); setMainView("index"); }}
@@ -2636,6 +2704,20 @@ function App() {
           </div>
 
           <div
+            onClick={() => { setMainSection("religion"); setReligionSetView("index"); }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", marginBottom: 10, cursor: "pointer" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 30 }}>{RELIGION_ICON}</span>
+              <div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: "#e7eaf0" }}>{sectionLabels.religion}</div>
+                <div style={{ fontSize: 12, color: "#8993a6", marginTop: 2 }}>{religionSets.length}개의 종교 모음</div>
+              </div>
+            </div>
+            <div style={{ color: "#8993a6", fontSize: 18 }}>›</div>
+          </div>
+
+          <div
             onClick={() => setMainSection("sermon")}
             style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "16px 16px", cursor: "pointer" }}
           >
@@ -2653,7 +2735,7 @@ function App() {
             <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 8 }}>
               폰을 바꾸실 땐, 바꾸기 전에 여기서 백업하고 새 폰에서 복원해주세요.
             </div>
-            <StorageInfo refreshKey={Array.from(collectImageRefs([books, quoteSets, sermons])).join("|")} />
+            <StorageInfo refreshKey={Array.from(collectImageRefs([books, quoteSets, religionSets, sermons])).join("|")} />
             <div style={{ display: "flex", gap: 8 }}>
               <input type="file" accept="application/json" ref={fullBackupFileInputRef} onChange={importFullBackup} style={{ display: "none" }} />
               <button
@@ -2853,6 +2935,145 @@ function App() {
             onBack={() => setQuoteSetView("index")}
             onUpdateBook={updateQuoteSet}
             onRenameBook={renameQuoteSet}
+            onSnapshotUndo={pushUndoSnapshot}
+            undo={undo}
+            undoCount={undoCount}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (mainSection === "religion") {
+    return (
+      <div style={{ minHeight: "100vh", maxWidth: 520, margin: "0 auto", color: "#e7eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif" }}>
+        {screenOff && <ScreenOffOverlay onWake={() => setScreenOff(false)} />}
+        <style>{`
+          .field { background:#12151b; border:1px solid #2a303c; border-radius:8px; color:#e7eaf0; padding:6px 8px; font-size:13px; width:100%; font-family:inherit; box-sizing:border-box; }
+          .field:focus { outline:none; border-color:#c9974a; } .field-wrap:focus-within { border-color:#c9974a; }
+          .iconbtn { background:none; border:none; cursor:pointer; }
+        `}</style>
+
+        {religionSetView === "index" && (
+          <div>
+          <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 10px", position: "sticky", top: 0, zIndex: 20, background: "#12151b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+              <button onClick={() => setMainSection("home")} className="iconbtn" style={{ color: "#c9974a", fontWeight: 700, fontSize: 13 }}>← 홈으로</button>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <input type="file" accept=".xlsx,.xls" ref={religionSetListFileInputRef} onChange={importReligionSetList} style={{ display: "none" }} />
+                <button onClick={() => religionSetListFileInputRef.current && religionSetListFileInputRef.current.click()} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬆ 가져오기</button>
+                <button onClick={exportReligionSetList} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap" }}>⬇ 내려받기</button>
+                <button onClick={jumpToBookmarkedReligionSet} className="iconbtn" style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: "#c9974a", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <svg width="11" height="14" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h14v18l-7-5-7 5V1z" fill="#c9974a" stroke="#c9974a" strokeWidth="1" strokeLinejoin="round" /></svg>
+                  책갈피로
+                </button>
+                <button
+                  onClick={undo}
+                  disabled={undoCount === 0}
+                  className="iconbtn"
+                  style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #262c37", background: "#1a1f28", color: undoCount > 0 ? "#c9974a" : "#4a5060", fontWeight: 700, fontSize: 11.5, whiteSpace: "nowrap", opacity: undoCount > 0 ? 1 : 0.5 }}
+                >
+                  ↺{undoCount > 0 ? ` ${undoCount}` : ""}
+                </button>
+              </div>
+          </div>
+          <div style={{ padding: "0 16px 20px" }}>
+            <div style={{ fontSize: 40, fontWeight: 800, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+              <span>{RELIGION_ICON}</span>
+              <input
+                value={sectionLabels.religion}
+                onChange={(e) => setSectionLabel("religion", e.target.value)}
+                style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", fontSize: 40, fontWeight: 800, color: "#e7eaf0", padding: 0 }}
+              />
+              <button
+                onClick={quickAddReligionSet}
+                title="새로추가"
+                style={{ width: 30, height: 30, borderRadius: "50%", border: "1px solid #c9974a", background: "rgba(201,151,74,0.12)", color: "#c9974a", fontSize: 17, fontWeight: 700, lineHeight: 1, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+              >
+                +
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: "#8993a6", marginBottom: 12 }}>제목을 눌러 주요문을 보고, 아래에서 새 종교 모음을 추가하세요. 박스를 왼쪽으로 밀면 삭제/취소를 선택할 수 있어요.</div>
+
+            <input
+              value={religionSetListSearchQuery}
+              onChange={(e) => setReligionSetListSearchQuery(e.target.value)}
+              placeholder="🔍 주요문 검색 (제목 또는 내용)"
+              className="field"
+              style={{ marginBottom: 14, fontSize: 14, padding: "8px 10px" }}
+            />
+
+            {religionSets.length === 0 && (
+              <div style={{ textAlign: "center", color: "#8993a6", fontSize: 13, padding: "40px 0" }}>아직 등록된 종교이 없어요.</div>
+            )}
+
+            {[...religionSets]
+              .filter((b) => {
+                const q = religionSetListSearchQuery.trim().toLowerCase();
+                if (!q) return true;
+                return (b.title || "").toLowerCase().includes(q) || b.quotes.some((qq) => qq.text.toLowerCase().includes(q));
+              })
+              // 번호를 수정하면 그 번호 순서대로 자동 정렬된다.
+              .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
+              .map((b) => (
+              <div key={b.id} ref={(el) => { if (el) religionSetListRowRefs.current[b.id] = el; }} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0, paddingTop: 2 }}>
+                  <input
+                    value={b.number}
+                    onChange={(e) => updateReligionSetNumber(b.id, e.target.value)}
+                    inputMode="numeric"
+                    className="field"
+                    style={{ width: 30, fontSize: 13, fontWeight: 700, color: "#c9974a", textAlign: "center", padding: "4px 0" }}
+                  />
+                  <button type="button" onClick={() => toggleBookmarkedReligionSet(b.id)} style={{ width: 22, height: 22, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <svg width="15" height="19" viewBox="0 0 16 20" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1 1h14v18l-7-5-7 5V1z" fill={bookmarkedReligionSetId === b.id ? "#c9974a" : "#3a4150"} stroke={bookmarkedReligionSetId === b.id ? "#c9974a" : "#5a6274"} strokeWidth="1" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <SwipeRow
+                    onNavigate={() => { setCurrentReligionSetId(b.id); setReligionSetView("book"); }}
+                    content={
+                      <div style={{ background: "#1a1f28", border: "1px solid #262c37", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 19, fontWeight: 700, color: "#e7eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title || "(제목 없음)"}</div>
+                          <div style={{ fontSize: 12, color: "#8993a6", marginTop: 4 }}>
+                            주요문 {b.quotes.length}개 · 읽은날짜 {b.readDate || "미설정"} · 익힘 {b.learnedCount || 0}번
+                          </div>
+                        </div>
+                        <div style={{ color: "#8993a6", fontSize: 18, flexShrink: 0 }}>›</div>
+                      </div>
+                    }
+                    actions={(close) => (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); close(); }}
+                          style={{ flex: 1, border: "none", background: "#3a4150", color: "#e7eaf0", fontWeight: 700, fontSize: 13 }}
+                        >
+                          취소
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteReligionSet(b.id); }}
+                          style={{ flex: 1, border: "none", background: "#e8544b", color: "#fff", fontWeight: 700, fontSize: 13 }}
+                        >
+                          삭제
+                        </button>
+                      </>
+                    )}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          </div>
+        )}
+
+        {religionSetView === "book" && currentReligionSet && (
+          <BookQuotesView
+            book={currentReligionSet}
+            onBack={() => setReligionSetView("index")}
+            onUpdateBook={updateReligionSet}
+            onRenameBook={renameReligionSet}
             onSnapshotUndo={pushUndoSnapshot}
             undo={undo}
             undoCount={undoCount}

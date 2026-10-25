@@ -1,6 +1,6 @@
 {
-  "name": "독서요약집",
-  "short_name": "독서요약집",
+  "name": "핵심모음집",
+  "short_name": "핵심모음집",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#12151b",
