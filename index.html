@@ -97,16 +97,37 @@ const parseHierNumber = (raw) => {
 
 // 번호를 직접 적어 주요문을 추가할 때: 번호순으로 정렬하고, 같은 번호가 이미 있으면 새로 기입한 것을
 // 그 번호 자리에 넣고 기존 것은 뒤로 밀어서, 전체 번호를 1,2,3… 순서대로 다시 매긴다.
-const insertQuoteByNumber = (quotes, item, wantedNumber) => {
+// base: 번호를 매기기 시작하는 값 (독서/명언/종교는 1, 교회설교요약 안의 주요문은 0)
+const insertQuoteByNumber = (quotes, item, wantedNumber, base = 1) => {
   const sorted = [...quotes].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
   let at = sorted.length;
-  if (wantedNumber) {
+  const hasWanted = base === 0 ? wantedNumber !== null && wantedNumber !== undefined : !!wantedNumber;
+  if (hasWanted) {
     const i = sorted.findIndex((q) => (num(q.number) || 0) >= wantedNumber);
     if (i >= 0) at = i;
   }
   sorted.splice(at, 0, item);
-  return sorted.map((q, i) => ({ ...q, number: i + 1 }));
+  return sorted.map((q, i) => ({ ...q, number: i + base }));
 };
+
+// 교회설교요약 안의 주요문 번호를 1번 시작에서 0번 시작으로 한 번만 옮기는 도우미.
+// 이미 0번이 있거나 번호가 1보다 작은 설교는 건드리지 않는다.
+const SERMON_ZERO_FLAG = "reading-summary-sermon-zero-base-v1";
+const shiftSermonsToZeroBase = (list) => (Array.isArray(list) ? list : []).map((sm) => {
+  const qs = Array.isArray(sm.quotes) ? sm.quotes : [];
+  if (!qs.length) return sm;
+  const nums = qs.map((q) => (typeof q.number === "number" ? q.number : (typeof q.number === "string" ? parseFloat(q.number) : NaN))).filter((n) => !isNaN(n));
+  if (!nums.length || Math.min(...nums) < 1) return sm;
+  const dec = (n) => {
+    if (typeof n === "number") return Number.isInteger(n) ? n - 1 : Math.round((n - 1) * 1000) / 1000;
+    if (typeof n === "string") {
+      const m = n.match(/^(\d+)([.\-])(\d+)$/);
+      if (m) return `${Number(m[1]) - 1}${m[2]}${m[3]}`;
+    }
+    return n;
+  };
+  return { ...sm, quotes: qs.map((q) => ({ ...q, number: dec(q.number) })) };
+});
 
 // 주요문을 삭제하면, 삭제된 번호보다 큰 번호들을 한 칸씩 앞으로 당겨 빈 번호가 생기지 않게 한다.
 // (예: 1,2,3,4 에서 2번을 삭제 → 3번은 2번, 4번은 3번으로.) 3-1 같은 하위번호도 상위번호만 한 칸 당긴다.
@@ -1439,7 +1460,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
 
   const renumberQuotes = (list) => [...list]
     .sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0))
-    .map((q, idx) => ({ ...q, number: idx + 1 }));
+    .map((q, idx) => ({ ...q, number: idx }));
 
   const addQuote = (extraImages) => {
     const raw = newQuoteText;
@@ -1457,11 +1478,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
         for (const t of parsed) {
           if (isDuplicateText(t, acceptedTexts)) continue;
           acceptedTexts.push(t);
-          uniqueImported.push({ id: genId(), number: 0, text: t });
+          uniqueImported.push({ id: genId(), number: 1e9, text: t });
         }
         const skipped = parsed.length - uniqueImported.length;
         if (uniqueImported.length > 0) {
-          persistQuotes([...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 })));
+          persistQuotes([...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx })));
           pendingScrollIdRef.current = uniqueImported[uniqueImported.length - 1].id;
         }
         setNewQuoteNumber("");
@@ -1476,9 +1497,9 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
       alert("기존 주요문과 80% 이상 비슷한 내용이라 기존 내용을 그대로 두고 추가하지 않았어요.");
       return;
     }
-    const wanted = newQuoteNumber.trim() ? num(newQuoteNumber) : 0;
+    const wanted = newQuoteNumber.trim() ? num(newQuoteNumber) : null;
     const newId = genId();
-    persistQuotes(insertQuoteByNumber(sermon.quotes, { id: newId, number: wanted, text, ...(images.length ? { images } : {}) }, wanted));
+    persistQuotes(insertQuoteByNumber(sermon.quotes, { id: newId, number: wanted === null ? 1e9 : wanted, text, ...(images.length ? { images } : {}) }, wanted, 0));
     pendingScrollIdRef.current = newId;
     setNewQuoteNumber("");
     setNewQuoteText("");
@@ -1599,11 +1620,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     for (const text of parsed) {
       if (isDuplicateText(text, acceptedTexts)) continue;
       acceptedTexts.push(text);
-      uniqueImported.push({ id: genId(), number: 0, text });
+      uniqueImported.push({ id: genId(), number: 1e9, text });
     }
     const skipped = parsed.length - uniqueImported.length;
     const finalQuotes = uniqueImported.length > 0
-      ? [...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 }))
+      ? [...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx }))
       : sermon.quotes;
     // 제목 변경과 주요문 추가를 한 번의 업데이트로 같이 반영한다.
     if (uniqueImported.length > 0) pendingScrollIdRef.current = uniqueImported[uniqueImported.length - 1].id;
@@ -1685,11 +1706,11 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
     for (const text of parsed) {
       if (isDuplicateText(text, acceptedTexts)) continue;
       acceptedTexts.push(text);
-      uniqueImported.push({ id: genId(), number: 0, text });
+      uniqueImported.push({ id: genId(), number: 1e9, text });
     }
     const skipped = parsed.length - uniqueImported.length;
     const finalQuotes = uniqueImported.length > 0
-      ? [...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx + 1 }))
+      ? [...sermon.quotes, ...uniqueImported].map((q, idx) => ({ ...q, number: idx }))
       : sermon.quotes;
     onUpdateSermon({ ...sermon, quotes: finalQuotes, title });
     alert(`제목을 "${title}"(으)로 반영했어요.${uniqueImported.length > 0 ? ` 주요문 ${uniqueImported.length}개도 가져왔어요.` : ""}${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}`);
@@ -1738,10 +1759,10 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           imported = contentLines
             .map((line) => {
               const { text } = splitLeadingNumber(line);
-              return { id: genId(), number: 0, text };
+              return { id: genId(), number: 1e9, text };
             })
             .filter((q) => q.text)
-            .map((q, idx) => ({ ...q, number: idx + 1 }));
+            .map((q, idx) => ({ ...q, number: idx }));
           fieldUpdates = {};
           if (dateStr) fieldUpdates.date = dateStr;
           if (title) fieldUpdates.title = title;
@@ -1777,7 +1798,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
           return;
         }
         const merged = [...sermon.quotes, ...uniqueImported].sort((a, b) => (num(a.number) || 0) - (num(b.number) || 0));
-        const renumbered = merged.map((q, idx) => ({ ...q, number: idx + 1 }));
+        const renumbered = merged.map((q, idx) => ({ ...q, number: idx }));
         onUpdateSermon({ ...sermon, ...(fieldUpdates || {}), quotes: renumbered });
         alert(`${uniqueImported.length}개를 가져왔어요.${skipped > 0 ? ` (80% 이상 비슷한 내용 ${skipped}개 제외)` : ""}${fieldUpdates ? " 날짜/제목/성경/강사도 함께 채웠어요." : ""}`);
       } catch (err) {
@@ -2263,7 +2284,13 @@ function App() {
   }, [sectionLabels]);
   const setSectionLabel = (key, value) => setSectionLabels((prev) => ({ ...prev, [key]: value }));
 
-  const [sermons, setSermons] = useState(() => ensureSundays(loadRawSermons(), new Set(loadDeletedSermonDates())));
+  const [sermons, setSermons] = useState(() => {
+    let raw = loadRawSermons();
+    try {
+      if (!localStorage.getItem(SERMON_ZERO_FLAG)) { raw = shiftSermonsToZeroBase(raw); localStorage.setItem(SERMON_ZERO_FLAG, "1"); }
+    } catch (e) {}
+    return ensureSundays(raw, new Set(loadDeletedSermonDates()));
+  });
   const [deletedSermonDates, setDeletedSermonDates] = useState(loadDeletedSermonDates);
   const [sermonView, setSermonView] = useState("list"); // 'list' | 'detail'
   const [currentSermonId, setCurrentSermonId] = useState(null);
@@ -2482,6 +2509,7 @@ function App() {
       quoteSets,
       religionSets,
       prayers,
+      sermonZeroBase: true,
       sermons,
       deletedSermonDates,
       sectionLabels,
@@ -2527,7 +2555,8 @@ function App() {
         setQuoteSets(Array.isArray(data.quoteSets) ? data.quoteSets : []);
         setReligionSets(Array.isArray(data.religionSets) ? data.religionSets : []);
         setPrayers({ ...DEFAULT_PRAYERS, ...(data.prayers && typeof data.prayers === "object" ? data.prayers : {}) });
-        setSermons(Array.isArray(data.sermons) ? data.sermons : []);
+        setSermons(data.sermonZeroBase ? (Array.isArray(data.sermons) ? data.sermons : []) : shiftSermonsToZeroBase(data.sermons));
+        try { localStorage.setItem(SERMON_ZERO_FLAG, "1"); } catch (e) {}
         setDeletedSermonDates(Array.isArray(data.deletedSermonDates) ? data.deletedSermonDates : []);
         if (data.sectionLabels) setSectionLabels((prev) => ({ ...prev, ...data.sectionLabels, ...(data.sectionLabels.reading === "독서완료" ? { reading: "독서" } : {}) }));
         setBookmarkedBookId(data.bookmarkedBookId || null);
