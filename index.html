@@ -683,6 +683,17 @@ function QuoteLinks({ text }) {
     </div>
   );
 }
+// 새 주요문 기입란: 글이 늘어나면 입력칸도 같이 늘어나게 해서(안쪽 스크롤 없음) 커서가 줄 위치에서 벗어나지 않게 한다.
+// 너무 길어지면 화면의 일정 높이까지만 늘어나고 그 뒤에는 안쪽 스크롤로 바뀐다.
+const fitEntryTextarea = (el) => {
+  if (!el) return;
+  const cap = Math.max(140, Math.round((window.innerHeight || 700) * 0.3));
+  el.style.height = "auto";
+  const full = el.scrollHeight;
+  el.style.height = Math.max(56, Math.min(full, cap)) + "px";
+  el.style.overflowY = full > cap ? "auto" : "hidden";
+};
+
 function QuoteImages({ images }) {
   const [open, setOpen] = useState(null);
   if (!images || images.length === 0) return null;
@@ -808,6 +819,7 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
   // 생긴 포커스 이동이나, 앱을 벗어나며 생긴 blur는 입력하지 않는다.
   const lastOutsideTouchRef = useRef(0);
   const quoteTextareaRef = useRef(null);
+  useEffect(() => { fitEntryTextarea(quoteTextareaRef.current); }, [newQuoteText, newQuoteImages.length]);
   useEffect(() => {
     const mark = (e) => {
       if (e.target !== quoteTextareaRef.current) lastOutsideTouchRef.current = Date.now();
@@ -1295,18 +1307,18 @@ function BookQuotesView({ book, onBack, onUpdateBook, onRenameBook, onSnapshotUn
                 <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
               </label>
             </div>
-            <div className="field field-wrap" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div className="field field-wrap" onClick={(e) => { if (e.target === e.currentTarget && quoteTextareaRef.current) quoteTextareaRef.current.focus(); }} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
               <QuoteImages images={newQuoteImages} />
               <textarea
                 value={newQuoteText}
                 ref={quoteTextareaRef}
-                onChange={(e) => setNewQuoteText(e.target.value)}
+                onChange={(e) => { setNewQuoteText(e.target.value); fitEntryTextarea(e.target); }}
                 onBlur={handleQuoteBlur}
                 placeholder="내용 입력 또는 사진 붙여넣기 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
                 rows={2}
                 onPaste={pasteIntoNew}
                 onKeyDown={(e) => { if (newQuoteImages.length && isBackspaceAtStart(e)) { e.preventDefault(); setNewQuoteImages((prev) => prev.slice(0, -1)); } }}
-                style={{ display: "block", flex: 1, width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", margin: 0, padding: 0, fontFamily: "inherit", fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
+                style={{ display: "block", flex: "none", width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", margin: 0, padding: 0, fontFamily: "inherit", fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "none", overflow: "hidden", minHeight: 56, WebkitAppearance: "none" }}
               />
             </div>
           </div>
@@ -1422,6 +1434,7 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
   // 생긴 포커스 이동이나, 앱을 벗어나며 생긴 blur는 입력하지 않는다.
   const lastOutsideTouchRef = useRef(0);
   const quoteTextareaRef = useRef(null);
+  useEffect(() => { fitEntryTextarea(quoteTextareaRef.current); }, [newQuoteText, newQuoteImages.length]);
   useEffect(() => {
     const mark = (e) => {
       if (e.target !== quoteTextareaRef.current) lastOutsideTouchRef.current = Date.now();
@@ -1979,18 +1992,18 @@ function SermonDetailView({ sermon, onBack, onUpdateSermon, preacherOptions, onS
                 <span style={{ fontSize: 10, color: "#8993a6", whiteSpace: "nowrap" }}>번호나눔</span>
               </label>
             </div>
-            <div className="field field-wrap" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div className="field field-wrap" onClick={(e) => { if (e.target === e.currentTarget && quoteTextareaRef.current) quoteTextareaRef.current.focus(); }} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
               <QuoteImages images={newQuoteImages} />
               <textarea
                 value={newQuoteText}
                 ref={quoteTextareaRef}
-                onChange={(e) => setNewQuoteText(e.target.value)}
+                onChange={(e) => { setNewQuoteText(e.target.value); fitEntryTextarea(e.target); }}
                 onBlur={handleQuoteBlur}
                 placeholder="내용 입력 또는 사진 붙여넣기 (번호나눔·번호통합 모두 해제 시 전체가 하나의 주요문으로 들어가요)"
                 rows={2}
                 onPaste={pasteIntoNew}
                 onKeyDown={(e) => { if (newQuoteImages.length && isBackspaceAtStart(e)) { e.preventDefault(); setNewQuoteImages((prev) => prev.slice(0, -1)); } }}
-                style={{ display: "block", flex: 1, width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", margin: 0, padding: 0, fontFamily: "inherit", fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "vertical" }}
+                style={{ display: "block", flex: "none", width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", margin: 0, padding: 0, fontFamily: "inherit", fontSize: 17, color: "#e7eaf0", lineHeight: "28px", resize: "none", overflow: "hidden", minHeight: 56, WebkitAppearance: "none" }}
               />
             </div>
           </div>
